@@ -10,7 +10,7 @@ from src.datasets.real_obs_dataset import load_data as load_real_data
 from src.datasets.vitae_dataset import unscale
 from src.datasets.vitae_dataset import load_data as load_sparse_simulated
 from src.datasets.voronoi_datasets import load_data as load_voronoi_simulated
-from src.utils.evaluation import compute_relative_error, compute_rmse, compute_mean_fractional_error, compute_mean_fractional_bias
+from src.utils.evaluation import compute_relative_error, compute_rmse, compute_rrmse, compute_mean_fractional_error, compute_mean_fractional_bias
 
 
 def evaluate(
@@ -165,22 +165,25 @@ def evaluate_on_simulated(
     # These metrics are computed globally (all pollutants together)
     global_re = np.mean(compute_relative_error(ground_truths, predictions))
     global_rmse = compute_rmse(ground_truths, predictions).item()
+    global_rrmse = compute_rrmse(ground_truths, predictions).item()
     global_mfe = compute_mean_fractional_error(ground_truths, predictions).item()
     global_mfb = compute_mean_fractional_bias(ground_truths, predictions).item()
 
     # These metrics are computed for each pollutant separately
-    pollutants_re, pollutants_rmse, pollutants_mfe, pollutants_mfb = [], [], [], []
+    pollutants_re, pollutants_rmse, pollutants_rrmse, pollutants_mfe, pollutants_mfb = [], [], [], [], []
     for i in range(4):
         pollutant_ground_truths = ground_truths[:, i]
         pollutant_predictions = predictions[:, i]
 
         pollutant_re = np.mean(compute_relative_error(pollutant_ground_truths, pollutant_predictions))    
         pollutant_rmse = compute_rmse(pollutant_ground_truths, pollutant_predictions).item()
+        pollutant_rrmse = compute_rrmse(pollutant_ground_truths, pollutant_predictions).item()
         pollutant_mfe = compute_mean_fractional_error(pollutant_ground_truths, pollutant_predictions).item()
         pollutant_mfb = compute_mean_fractional_bias(pollutant_ground_truths, pollutant_predictions).item()
 
         pollutants_re.append(pollutant_re)
         pollutants_rmse.append(pollutant_rmse)
+        pollutants_rrmse.append(pollutant_rrmse)
         pollutants_mfe.append(pollutant_mfe)
         pollutants_mfb.append(pollutant_mfb)
 
@@ -192,9 +195,12 @@ def evaluate_on_simulated(
         # Save the relative error
         "global_re": global_re,
         "pollutants_re": pollutants_re,
-        # Save the RMSe
+        # Save the RMSE
         "global_rmse": global_rmse,
         "pollutants_rmse": pollutants_rmse,
+        # Save the RRMSE
+        "global_rrmse": global_rrmse,
+        "pollutants_rrmse": pollutants_rrmse,
         # Save the MFE
         "global_mfe": global_mfe,
         "pollutants_mfe": pollutants_mfe,
@@ -267,11 +273,12 @@ def evaluate_on_real(
     # These metrics are computed globally (all pollutants together)
     global_re = np.mean(compute_relative_error(ground_truths * target_masks, predictions * target_masks))
     global_rmse = compute_rmse(ground_truths, predictions, target_masks).item()
+    global_rrmse = compute_rrmse(ground_truths, predictions, target_masks).item()
     global_mfe = compute_mean_fractional_error(ground_truths, predictions, target_masks).item()
     global_mfb = compute_mean_fractional_bias(ground_truths, predictions, target_masks).item()
 
     # These metrics are computed for each pollutant separately
-    pollutants_re, pollutants_rmse, pollutants_mfe, pollutants_mfb = [], [], [], []
+    pollutants_re, pollutants_rmse, pollutants_rrmse, pollutants_mfe, pollutants_mfb = [], [], [], [], []
     for i in range(4):
         pollutant_ground_truths = ground_truths[:, i]
         pollutant_predictions = predictions[:, i]
@@ -279,11 +286,13 @@ def evaluate_on_real(
 
         pollutant_re = np.mean(compute_relative_error(pollutant_ground_truths * pollutant_target_masks, pollutant_predictions * pollutant_target_masks))    
         pollutant_rmse = compute_rmse(pollutant_ground_truths, pollutant_predictions, pollutant_target_masks).item()
+        pollutant_rrmse = compute_rrmse(pollutant_ground_truths, pollutant_predictions, pollutant_target_masks).item()
         pollutant_mfe = compute_mean_fractional_error(pollutant_ground_truths, pollutant_predictions, pollutant_target_masks).item()
         pollutant_mfb = compute_mean_fractional_bias(pollutant_ground_truths, pollutant_predictions, pollutant_target_masks).item()
 
         pollutants_re.append(pollutant_re)
         pollutants_rmse.append(pollutant_rmse)
+        pollutants_rrmse.append(pollutant_rrmse)
         pollutants_mfe.append(pollutant_mfe)
         pollutants_mfb.append(pollutant_mfb)
 
@@ -296,9 +305,12 @@ def evaluate_on_real(
         # Save the relative error
         "global_re": global_re,
         "pollutants_re": pollutants_re,
-        # Save the RMSe
+        # Save the RMSE
         "global_rmse": global_rmse,
         "pollutants_rmse": pollutants_rmse,
+        # Save the RRMSE
+        "global_rrmse": global_rrmse,
+        "pollutants_rrmse": pollutants_rrmse,
         # Save the MFE
         "global_mfe": global_mfe,
         "pollutants_mfe": pollutants_mfe,
