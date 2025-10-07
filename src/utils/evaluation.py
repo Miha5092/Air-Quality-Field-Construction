@@ -38,6 +38,25 @@ def compute_rmse(reference: torch.Tensor, prediction: torch.Tensor, mask: torch.
         squared_error = (prediction - reference) ** 2
         mse = squared_error.mean()
         return torch.sqrt(mse)
+    
+
+def compute_rrmse(reference: torch.Tensor, prediction: torch.Tensor, mask: torch.Tensor | None) -> torch.Tensor:
+    if mask is not None:
+        squared_error = (prediction - reference) ** 2
+        squared_error = squared_error * mask
+
+        mse = squared_error.sum() / torch.clamp(mask.sum(), min=1.0)
+
+        norm_term = ((reference ** 2) * mask).sum()
+
+        return torch.sqrt(mse / norm_term + EPSILON)
+    else:
+        squared_error = (prediction - reference) ** 2   
+        mse = squared_error.mean()
+
+        norm_term = (reference ** 2).sum()
+
+        return torch.sqrt(mse / (norm_term + EPSILON))
 
 
 def compute_mean_fractional_bias(target: torch.Tensor, pred: torch.Tensor, mask: torch.Tensor | None) -> torch.Tensor:
