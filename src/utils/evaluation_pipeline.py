@@ -25,16 +25,16 @@ def evaluate(
     
     # Decide where to save the results
     save_dirs_map = {
-        "VCNN": "results/predictions/vunet",
-        "VUnet": "results/predictions/vunet",
-        "VCNN_classic": "results/predictions/vcnn",
-        "ConvLSTM": "results/predictions/clstm",
-        "OptimizedModule": "results/predictions/clstm",
-        "ViTAE": "results/predictions/vitae"
+        "VCNN": "paper_results/predictions/vunet",
+        "VUnet": "paper_results/predictions/vunet",
+        "VCNN_classic": "paper_results/predictions/vcnn",
+        "ConvLSTM": "paper_results/predictions/clstm",
+        "OptimizedModule": "paper_results/predictions/clstm",
+        "ViTAE": "paper_results/predictions/vitae"
     }
 
     # Decide where to save the results
-    preds_dir = save_dirs_map.get(model.__class__.__name__, "results/predictions/unknown_model")
+    preds_dir = save_dirs_map.get(model.__class__.__name__, "paper_results/predictions/unknown_model")
     os.makedirs(preds_dir, exist_ok=True)
     preds_file = os.path.join(preds_dir, f"{experiment_name}_results.npz")
 
