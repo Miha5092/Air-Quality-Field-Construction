@@ -5,12 +5,13 @@ import torch.nn as nn
 from torch.utils.data import DataLoader, Dataset
 from torch.optim import Optimizer
 from typing import Callable
+from diffusers.models.unets.unet_2d import UNet2DModel
 
 from src.models.vclstm import ConvLSTM
 from src.utils.evaluation import compute_all_metrics
 
 
-def get_model(model_type: str, train_dataset: Dataset, kernel_size: int, use_norm: bool, hidden_channels: int, n_layers: int) -> nn.Module:
+def get_model(model_type: str, train_dataset: Dataset, kernel_size: int, hidden_channels: int, n_layers: int) -> nn.Module:
     """
     Instantiates the appropriate VCNN model based on type.
 
@@ -33,14 +34,8 @@ def get_model(model_type: str, train_dataset: Dataset, kernel_size: int, use_nor
     output_channels = output_tensor.shape[-3]
 
     # Initialize model based on type.
-    if model_type == "tiny":
-        return vcnn_tiny(input_channels, output_channels, kernel_size, use_norm)
-    elif model_type == "lite":
-        return vcnn_lite(input_channels, output_channels, kernel_size, use_norm)
-    elif model_type == "base":
-        return vcnn_base(input_channels, output_channels, kernel_size, use_norm)
-    elif model_type == "large":
-        return vcnn_large(input_channels, output_channels, kernel_size, use_norm)
+    if model_type == "unet":
+        return get_unet(input_channels, output_channels)
     elif model_type == "classic":
         return vcnn_classic(input_channels, output_channels)
     else:   # ConvLSTM
@@ -49,20 +44,11 @@ def get_model(model_type: str, train_dataset: Dataset, kernel_size: int, use_nor
         return model
 
 
+def get_unet(input_channels: int, output_channels: int):
+    return VUnet(input_channels, output_channels)
+
 def vcnn_classic(in_chans: int, out_chans: int):
     return VCNN_classic(in_chans, out_chans)
-
-def vcnn_tiny(in_chans: int, out_chans: int, kernel_size: int = 3, use_norm: bool = True):
-    return VCNN(in_chans, out_chans, 1, kernel_size, 32, use_norm = use_norm)   
-
-def vcnn_lite(in_chans: int, out_chans: int, kernel_size: int = 3, use_norm: bool = True):
-    return VCNN(in_chans, out_chans, 1, kernel_size, use_norm = use_norm)
-
-def vcnn_base(in_chans: int, out_chans: int, kernel_size: int = 3, use_norm: bool = True):
-    return VCNN(in_chans, out_chans, 3, kernel_size, use_norm = use_norm)
-
-def vcnn_large(in_chans: int, out_chans: int, kernel_size: int = 3, use_norm: bool = True):
-    return VCNN(in_chans, out_chans, 5, kernel_size, use_norm = use_norm)
 
 
 def create_convs(in_channels, out_channels, block_depth, kernel_size, padding, use_norm):
@@ -364,3 +350,80 @@ def evaluate_loader(
     avg_loss /= len(loader)
     return avg_loss, relative_errors, ssims, psnrs, local_errors, all_obs, all_gt, preds
     
+
+class VUnet(nn.Module):
+    def __init__(
+            self, 
+            input_channels: int, 
+            output_channels: int
+            ):
+        super(VUnet, self).__init__()
+
+        self.unet = UNet2DModel(
+                in_channels=input_channels,
+                out_channels=output_channels,
+                down_block_types=("DownBlock2D", "DownBlock2D", "DownBlock2D", "AttnDownBlock2D"),
+                up_block_types=("AttnUpBlock2D", "UpBlock2D", "UpBlock2D", "UpBlock2D"),
+                block_out_channels=(32,64,128,256),
+                attention_head_dim=4
+            )
+        
+    def _pad_input(self, x, multiple=16):
+        """
+        Pad input tensor (B, C, H, W) so H and W are divisible by multiple.
+        Returns padded tensor and amount of padding applied.
+        """
+        _, _, H, W = x.shape
+        pad_h = (multiple - H % multiple) % multiple
+        pad_w = (multiple - W % multiple) % multiple
+
+        # Pad right and bottom only (left/top = 0)
+        padded = torch.nn.functional.pad(x, (0, pad_w, 0, pad_h))  # pad = (left, right, top, bottom)
+
+        return padded, pad_h, pad_w
+    
+    def _unpad_output(self, output, pad_h, pad_w):
+        """
+        Remove padding from model output (B, C, H, W)
+        """
+        if pad_h > 0:
+            output = output[:, :, :-pad_h, :]
+        if pad_w > 0:
+            output = output[:, :, :, :-pad_w]
+        return output
+
+    def forward(self, x: torch.Tensor):
+        dummy_t = torch.zeros(x.shape[0], dtype=torch.long, device=x.device)
+
+        padded_x, pad_h, pad_w  = self._pad_input(x)
+        padded_output= self.unet(padded_x, dummy_t).sample
+        output = self._unpad_output(padded_output, pad_h, pad_w)
+
+        return output
+    
+    def train_one_epoch(
+        self,
+        loader: DataLoader,
+        optimizer: Optimizer,
+        loss_fn: Callable,
+        device: torch.device,
+    ) -> float:
+            
+        self.train()
+        total_loss = 0.0
+
+        for observations, ground_truth in loader:
+            observations, ground_truth = observations.to(device), ground_truth.to(device)
+
+            torch.clamp(observations, 0, 1, out=observations)
+
+            pred = self(observations)
+            loss = loss_fn(pred, ground_truth)
+
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+
+            total_loss += loss.item()
+
+        return total_loss / len(loader)

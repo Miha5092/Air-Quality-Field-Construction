@@ -6,7 +6,7 @@ from torch.utils.data import DataLoader
 from src.models.vitae import get_model, evaluate_loader
 from src.datasets.vitae_dataset import load_data, unscale
 from src.utils.training import get_vitae_loss_fn, train
-from src.utils.evaluation import save_metrics_vit
+from src.utils.evaluation_pipeline import evaluate
 
 
 def main(
@@ -98,16 +98,13 @@ def main(
         early_stopping=early_stopping,
     )
 
-    save_metrics_vit(
-        experiment_name=experiment_name,
-        model=model,
-        loader=DataLoader(test_dataset, batch_size=batch_size, shuffle=False, pin_memory=True, num_workers=4),
-        evaluation_fn=evaluate_loader,
-        unscale_fn=unscale,
-        device=device,
-        scaling_type=scaling_type,
-        stats=stats,
-    )
+    if epochs > 0:
+        evaluate(
+            model=model,
+            data_scaling_type=scaling_type,
+            timesteps=timesteps,
+            experiment_name=experiment_name,
+        )
 
     return model
 

@@ -26,7 +26,7 @@ class RealObsDataset(Dataset):
         self.obs_mask = obs_mask
         self.target_mask = target_mask
 
-        assert model_type in ["vitae", "vcnn", "vunet", "clstm"], f"Model type {model_type} must be one of 'vitae', 'vcnn', 'vunet', or 'clstm'."
+        assert model_type in ["vitae", "vunet", "vcnn", "vunet", "clstm"], f"Model type {model_type} must be one of 'vitae', 'vcnn', 'vunet', or 'clstm'."
         self.model_type = model_type
 
         self.timesteps = timesteps

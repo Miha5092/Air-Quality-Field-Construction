@@ -5,9 +5,9 @@ import logging
 from torch.utils.data import DataLoader
 
 from src.models.vcnn import get_model, evaluate_loader
-from src.utils.evaluation import save_metrics_voronoi
 from src.utils.training import train, get_voronoi_loss_fn
-from src.datasets.voronoi_datasets import load_data, unscale
+from src.datasets.voronoi_datasets import load_data
+from src.utils.evaluation_pipeline import evaluate
 
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
@@ -33,7 +33,7 @@ def main(
     use_norm: bool,
     hidden_channels: int,
     n_layers: int,
-    noise: str = None,
+    noise: str = "none",
     full_noise: bool = False,
     split_mode: str = 'monthly',
     use_val: bool = False,
@@ -89,7 +89,6 @@ def main(
         model_type=model_type,
         train_dataset=train_dataset,
         kernel_size=kernel_size,
-        use_norm=use_norm,
         hidden_channels=hidden_channels,
         n_layers=n_layers
     )
@@ -112,15 +111,11 @@ def main(
     )
 
     if epochs > 0:
-        save_metrics_voronoi(
-            experiment_name=experiment_name,
+        evaluate(
             model=model,
-            loader=DataLoader(test_dataset, batch_size=batch_size, shuffle=False, pin_memory=True),
-            evaluation_fn=evaluate_loader,
-            unscale_fn=unscale,
-            device=device,
-            scaling_type=scaling_type,
-            stats=stats
+            data_scaling_type=scaling_type,
+            timesteps=timesteps,
+            experiment_name=experiment_name,
         )
 
     return model
@@ -129,7 +124,7 @@ def main(
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Train a VCNN model")
     parser.add_argument("--experiment_name", type=str, default="test", help="Name of the experiment")
-    parser.add_argument("--model_type", type=str, default="tiny", help="Model type: 'tiny', 'lite', 'base', 'large', 'classic', 'lstm'")
+    parser.add_argument("--model_type", type=str, default="unet", choices=["unet", "classic", "clstm"])
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
 
     parser.add_argument("--sensor_type", type=str, default="real", help="Type of sensors: fixed (30, 48, 108), fixed-random, random, or real")

@@ -26,6 +26,7 @@ def evaluate(
     # Decide where to save the results
     save_dirs_map = {
         "VCNN": "results/predictions/vunet",
+        "VUnet": "results/predictions/vunet",
         "VCNN_classic": "results/predictions/vcnn",
         "ConvLSTM": "results/predictions/clstm",
         "OptimizedModule": "results/predictions/clstm",
@@ -85,6 +86,7 @@ def evaluate(
 
 model_names_map = {
     "VCNN": "vunet",
+    "VUnet": "vunet",
     "VCNN_classic": "vcnn",
     "ConvLSTM": "clstm",
     "OptimizedModule": "clstm",
@@ -98,7 +100,7 @@ def evaluate_on_simulated(
     timesteps: int,
 ) -> dict:
     
-    device: torch.device = torch.device("cuda" if torch.cuda.is_available() else "cpu"),
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     model_type = model_names_map.get(model.__class__.__name__)
     
@@ -147,6 +149,8 @@ def evaluate_on_simulated(
                 channel_count = stats["data_mean"].shape[1] if "data_mean" in stats else stats["Y_mean"].shape[1]
                 obs_shape = obs.shape
 
+            stats = _convert_stats(stats)
+
             obs = unscale(obs.reshape(-1, channel_count, obs.shape[-2], obs.shape[-1]).cpu().detach().numpy(), data_scaling_type, **stats).reshape(*obs_shape)
             ground_truth = unscale(ground_truth.float().numpy(), data_scaling_type, **stats)
             preds = unscale(preds.cpu().detach().numpy(), data_scaling_type, **stats)
@@ -164,10 +168,10 @@ def evaluate_on_simulated(
 
     # These metrics are computed globally (all pollutants together)
     global_re = np.mean(compute_relative_error(ground_truths, predictions))
-    global_rmse = compute_rmse(ground_truths, predictions).item()
-    global_rrmse = compute_rrmse(ground_truths, predictions).item()
-    global_mfe = compute_mean_fractional_error(ground_truths, predictions).item()
-    global_mfb = compute_mean_fractional_bias(ground_truths, predictions).item()
+    global_rmse = compute_rmse(ground_truths, predictions, None).item()
+    global_rrmse = compute_rrmse(ground_truths, predictions, None).item()
+    global_mfe = compute_mean_fractional_error(ground_truths, predictions, None).item()
+    global_mfb = compute_mean_fractional_bias(ground_truths, predictions, None).item()
 
     # These metrics are computed for each pollutant separately
     pollutants_re, pollutants_rmse, pollutants_rrmse, pollutants_mfe, pollutants_mfb = [], [], [], [], []
@@ -176,10 +180,10 @@ def evaluate_on_simulated(
         pollutant_predictions = predictions[:, i]
 
         pollutant_re = np.mean(compute_relative_error(pollutant_ground_truths, pollutant_predictions))    
-        pollutant_rmse = compute_rmse(pollutant_ground_truths, pollutant_predictions).item()
-        pollutant_rrmse = compute_rrmse(pollutant_ground_truths, pollutant_predictions).item()
-        pollutant_mfe = compute_mean_fractional_error(pollutant_ground_truths, pollutant_predictions).item()
-        pollutant_mfb = compute_mean_fractional_bias(pollutant_ground_truths, pollutant_predictions).item()
+        pollutant_rmse = compute_rmse(pollutant_ground_truths, pollutant_predictions, None).item()
+        pollutant_rrmse = compute_rrmse(pollutant_ground_truths, pollutant_predictions, None).item()
+        pollutant_mfe = compute_mean_fractional_error(pollutant_ground_truths, pollutant_predictions, None).item()
+        pollutant_mfb = compute_mean_fractional_bias(pollutant_ground_truths, pollutant_predictions, None).item()
 
         pollutants_re.append(pollutant_re)
         pollutants_rmse.append(pollutant_rmse)
@@ -216,7 +220,7 @@ def evaluate_on_real(
     timesteps: int,
 ) -> dict:
     
-    device: torch.device = torch.device("cuda" if torch.cuda.is_available() else "cpu"),
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     model_type = model_names_map.get(model.__class__.__name__)
     
@@ -318,3 +322,17 @@ def evaluate_on_real(
         "global_mfb": global_mfb,
         "pollutants_mfb": pollutants_mfb
     }
+
+
+def _convert_stats(stats: dict[str, any]) -> dict:
+    """
+    Convert stats values from lists to numpy arrays.
+    """
+    converted_stats = {}
+    for key, value in stats.items():
+        if key.startswith("Y"):
+            key = key.replace("Y", "data")
+        
+        converted_stats[key] = value
+
+    return converted_stats
