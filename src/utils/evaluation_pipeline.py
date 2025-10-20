@@ -13,6 +13,7 @@ from src.datasets.voronoi_datasets import load_data as load_voronoi_simulated
 from src.utils.evaluation import compute_relative_error, compute_rmse, compute_rrmse, compute_mean_fractional_error, compute_mean_fractional_bias
 
 
+@torch.no_grad()
 def evaluate(
     model: nn.Module,
     data_scaling_type: str,
@@ -82,6 +83,7 @@ def evaluate(
         real_pollutants_mfb=results_on_real["pollutants_mfb"]
     )
 
+    logging.info(f"Saved evaluation results to {preds_file}")
 
 
 model_names_map = {
@@ -93,7 +95,7 @@ model_names_map = {
     "ViTAE": "vitae"
 }
 
-
+@torch.no_grad()
 def evaluate_on_simulated(
     model: nn.Module,
     data_scaling_type: str,
@@ -114,7 +116,7 @@ def evaluate_on_simulated(
     dataloader = DataLoader(
         dataset,
         batch_size=64 if model_type != "clstm" else 32,
-        shuffle=False, num_workers=3, pin_memory=True
+        shuffle=False
     )
 
     model.eval()
@@ -134,6 +136,7 @@ def evaluate_on_simulated(
             # If we are working with the ConvLSTM model, we need to take the last timestep
             if model_type == "clstm":
                 preds = preds[:, -1]
+                ground_truth = ground_truth[:, -1]
 
             # The ViTAE model outputs both the encoder and decoder predictions, we only need the decoder predictions
             if model_type == "vitae":
@@ -160,18 +163,18 @@ def evaluate_on_simulated(
             ground_truths.append(ground_truth)
             predictions.append(preds)
 
-    observations = np.concatenate(observations)
-    ground_truths = torch.from_numpy(np.concatenate(ground_truths))
-    predictions = torch.from_numpy(np.concatenate(predictions))
+    observations = np.concatenate(observations).astype(np.float32)
+    ground_truths = torch.from_numpy(np.concatenate(ground_truths).astype(np.float32))
+    predictions = torch.from_numpy(np.concatenate(predictions).astype(np.float32))
 
     # ------- Compute the metrics -------
 
     # These metrics are computed globally (all pollutants together)
     global_re = np.mean(compute_relative_error(ground_truths, predictions))
-    global_rmse = compute_rmse(ground_truths, predictions, None).item()
-    global_rrmse = compute_rrmse(ground_truths, predictions, None).item()
-    global_mfe = compute_mean_fractional_error(ground_truths, predictions, None).item()
-    global_mfb = compute_mean_fractional_bias(ground_truths, predictions, None).item()
+    global_rmse = compute_rmse(ground_truths, predictions, None)
+    global_rrmse = compute_rrmse(ground_truths, predictions, None)
+    global_mfe = compute_mean_fractional_error(ground_truths, predictions, None)
+    global_mfb = compute_mean_fractional_bias(ground_truths, predictions, None)
 
     # These metrics are computed for each pollutant separately
     pollutants_re, pollutants_rmse, pollutants_rrmse, pollutants_mfe, pollutants_mfb = [], [], [], [], []
@@ -180,10 +183,10 @@ def evaluate_on_simulated(
         pollutant_predictions = predictions[:, i]
 
         pollutant_re = np.mean(compute_relative_error(pollutant_ground_truths, pollutant_predictions))    
-        pollutant_rmse = compute_rmse(pollutant_ground_truths, pollutant_predictions, None).item()
-        pollutant_rrmse = compute_rrmse(pollutant_ground_truths, pollutant_predictions, None).item()
-        pollutant_mfe = compute_mean_fractional_error(pollutant_ground_truths, pollutant_predictions, None).item()
-        pollutant_mfb = compute_mean_fractional_bias(pollutant_ground_truths, pollutant_predictions, None).item()
+        pollutant_rmse = compute_rmse(pollutant_ground_truths, pollutant_predictions, None)
+        pollutant_rrmse = compute_rrmse(pollutant_ground_truths, pollutant_predictions, None)
+        pollutant_mfe = compute_mean_fractional_error(pollutant_ground_truths, pollutant_predictions, None)
+        pollutant_mfb = compute_mean_fractional_bias(pollutant_ground_truths, pollutant_predictions, None)
 
         pollutants_re.append(pollutant_re)
         pollutants_rmse.append(pollutant_rmse)
@@ -213,7 +216,7 @@ def evaluate_on_simulated(
         "pollutants_mfb": pollutants_mfb
     }
 
-
+@torch.no_grad()
 def evaluate_on_real(
     model: nn.Module,
     data_scaling_type: str,
@@ -228,7 +231,7 @@ def evaluate_on_real(
     dataloader = DataLoader(
         dataset,
         batch_size=64 if model_type != "clstm" else 32,
-        shuffle=False, num_workers=3, pin_memory=True
+        shuffle=False
     )
 
     model.eval()
@@ -267,19 +270,19 @@ def evaluate_on_real(
             target_masks.append(target_mask)
             predictions.append(preds)
 
-    observations = np.concatenate(observations)
-    ground_truths = torch.from_numpy(np.concatenate(ground_truths))
-    target_masks = torch.from_numpy(np.concatenate(target_masks))
-    predictions = torch.from_numpy(np.concatenate(predictions))
+    observations = np.concatenate(observations).astype(np.float32)
+    ground_truths = torch.from_numpy(np.concatenate(ground_truths).astype(np.float32))
+    target_masks = torch.from_numpy(np.concatenate(target_masks).astype(np.float32))
+    predictions = torch.from_numpy(np.concatenate(predictions).astype(np.float32))
 
     # ------- Compute the metrics -------
 
     # These metrics are computed globally (all pollutants together)
     global_re = np.mean(compute_relative_error(ground_truths * target_masks, predictions * target_masks))
-    global_rmse = compute_rmse(ground_truths, predictions, target_masks).item()
-    global_rrmse = compute_rrmse(ground_truths, predictions, target_masks).item()
-    global_mfe = compute_mean_fractional_error(ground_truths, predictions, target_masks).item()
-    global_mfb = compute_mean_fractional_bias(ground_truths, predictions, target_masks).item()
+    global_rmse = compute_rmse(ground_truths, predictions, target_masks)
+    global_rrmse = compute_rrmse(ground_truths, predictions, target_masks)
+    global_mfe = compute_mean_fractional_error(ground_truths, predictions, target_masks)
+    global_mfb = compute_mean_fractional_bias(ground_truths, predictions, target_masks)
 
     # These metrics are computed for each pollutant separately
     pollutants_re, pollutants_rmse, pollutants_rrmse, pollutants_mfe, pollutants_mfb = [], [], [], [], []
@@ -289,10 +292,10 @@ def evaluate_on_real(
         pollutant_target_masks = target_masks[:, i]
 
         pollutant_re = np.mean(compute_relative_error(pollutant_ground_truths * pollutant_target_masks, pollutant_predictions * pollutant_target_masks))    
-        pollutant_rmse = compute_rmse(pollutant_ground_truths, pollutant_predictions, pollutant_target_masks).item()
-        pollutant_rrmse = compute_rrmse(pollutant_ground_truths, pollutant_predictions, pollutant_target_masks).item()
-        pollutant_mfe = compute_mean_fractional_error(pollutant_ground_truths, pollutant_predictions, pollutant_target_masks).item()
-        pollutant_mfb = compute_mean_fractional_bias(pollutant_ground_truths, pollutant_predictions, pollutant_target_masks).item()
+        pollutant_rmse = compute_rmse(pollutant_ground_truths, pollutant_predictions, pollutant_target_masks)
+        pollutant_rrmse = compute_rrmse(pollutant_ground_truths, pollutant_predictions, pollutant_target_masks)
+        pollutant_mfe = compute_mean_fractional_error(pollutant_ground_truths, pollutant_predictions, pollutant_target_masks)
+        pollutant_mfb = compute_mean_fractional_bias(pollutant_ground_truths, pollutant_predictions, pollutant_target_masks)
 
         pollutants_re.append(pollutant_re)
         pollutants_rmse.append(pollutant_rmse)

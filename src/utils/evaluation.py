@@ -27,66 +27,120 @@ def compute_local_error(reference: torch.Tensor, prediction: torch.Tensor) -> to
 def compute_local_relative_error(reference: torch.Tensor, prediction: torch.Tensor) -> torch.Tensor:
     return torch.sqrt((reference - prediction) ** 2) / (torch.sqrt(reference ** 2) + EPSILON)
 
-
-def compute_rmse(reference: torch.Tensor, prediction: torch.Tensor, mask: torch.Tensor | None) -> torch.Tensor:
-    if mask is not None:
-        squared_error = (prediction - reference) ** 2
-        squared_error = squared_error * mask
-
-        return torch.sqrt(squared_error.sum() / torch.clamp(mask.sum(), min=1.0))
-    else:
-        squared_error = (prediction - reference) ** 2
-        mse = squared_error.mean()
-        return torch.sqrt(mse)
-    
-
-def compute_rrmse(reference: torch.Tensor, prediction: torch.Tensor, mask: torch.Tensor | None) -> torch.Tensor:
-    if mask is not None:
-        squared_error = (prediction - reference) ** 2
-        squared_error = squared_error * mask
-
-        mse = squared_error.sum() / torch.clamp(mask.sum(), min=1.0)
-
-        norm_term = ((reference ** 2) * mask).sum()
-
-        return torch.sqrt(mse / norm_term + EPSILON)
-    else:
-        squared_error = (prediction - reference) ** 2   
-        mse = squared_error.mean()
-
-        norm_term = (reference ** 2).sum()
-
-        return torch.sqrt(mse / (norm_term + EPSILON))
+@torch.no_grad()
+def compute_rmse(reference: torch.Tensor, prediction: torch.Tensor, mask: torch.Tensor = None, chunk_size=8) -> float:
+    total_sq = 0.0
+    total_n = 0.0
+    for i in range(0, reference.shape[0], chunk_size):
+        ref = reference[i:i+chunk_size]
+        pred = prediction[i:i+chunk_size]
+        if mask is not None:
+            m = mask[i:i+chunk_size]
+            diff = (pred - ref) * m
+            total_sq += torch.sum(diff * diff).item()
+            total_n += torch.sum(m).item()
+        else:
+            diff = pred - ref
+            total_sq += torch.sum(diff * diff).item()
+            total_n += diff.numel()
+        del ref, pred, diff  # free memory each iteration
+    denom = max(total_n, 1.0)
+    return (total_sq / denom) ** 0.5
 
 
-def compute_mean_fractional_bias(target: torch.Tensor, pred: torch.Tensor, mask: torch.Tensor | None) -> torch.Tensor:
-    if mask is not None:
-        numerator = target - pred
-        denominator = target + pred + EPSILON
+@torch.no_grad()
+def compute_rrmse(
+    reference: torch.Tensor,
+    prediction: torch.Tensor,
+    mask: torch.Tensor | None,
+    chunk_size: int = 8
+) -> float:
+    total_sq_error = 0.0
+    total_ref_sq = 0.0
+    total_count = 0.0
 
-        frac_bias = (2 * numerator) / denominator
-        return (frac_bias * mask).sum() / torch.clamp(mask.sum(), min=1.0)
-    else:
-        numerator = target - pred
-        denominator = target + pred + EPSILON
+    for i in range(0, reference.shape[0], chunk_size):
+        ref = reference[i:i+chunk_size]
+        pred = prediction[i:i+chunk_size]
+        m = mask[i:i+chunk_size] if mask is not None else None
 
-        frac_bias = (2 * numerator) / denominator
-        return frac_bias.mean()
+        # squared error
+        diff = (pred - ref) ** 2
+        if m is not None:
+            diff *= m
+            total_sq_error += diff.sum().item()
+            total_ref_sq += ((ref ** 2) * m).sum().item()
+            total_count += m.sum().item()
+        else:
+            total_sq_error += diff.sum().item()
+            total_ref_sq += (ref ** 2).sum().item()
+            total_count += diff.numel()
 
+        # free memory per batch
+        del ref, pred, m, diff
+        torch.cuda.empty_cache()
 
-def compute_mean_fractional_error(target: torch.Tensor, pred: torch.Tensor, mask: torch.Tensor | None) -> torch.Tensor:
-    if mask is not None:
-        numerator = (target - pred).abs()
-        denominator = target + pred + EPSILON
+    # Avoid divide-by-zero
+    denom = total_ref_sq + EPSILON
+    return (total_sq_error / denom) ** 0.5
 
-        frac_error = (2 * numerator) / denominator
-        return (frac_error * mask).sum() / torch.clamp(mask.sum(), min=1.0)
-    else:
-        numerator = (target - pred).abs()
-        denominator = target + pred + EPSILON
+@torch.no_grad()
+def compute_mean_fractional_bias(target: torch.Tensor, pred: torch.Tensor, mask: torch.Tensor | None, chunk_size: int = 8) -> float:
+    total = 0.0
+    count = 0.0
 
-        frac_error = (2 * numerator) / denominator
-        return frac_error.mean()
+    for i in range(0, target.shape[0], chunk_size):
+        t = target[i:i+chunk_size]
+        p = pred[i:i+chunk_size]
+        m = mask[i:i+chunk_size] if mask is not None else None
+
+        numerator = t - p
+        denominator = t + p
+        denominator.add_(EPSILON)
+
+        frac_bias = (2.0 * numerator) / denominator
+
+        if m is not None:
+            frac_bias *= m
+            total += frac_bias.sum().item()
+            count += m.sum().item()
+        else:
+            total += frac_bias.sum().item()
+            count += frac_bias.numel()
+
+        # free memory per batch
+        del t, p, m, numerator, denominator, frac_bias
+
+    denom = max(count, 1.0)
+    return total / denom
+
+@torch.no_grad()
+def compute_mean_fractional_error(target: torch.Tensor, pred: torch.Tensor, mask: torch.Tensor | None, chunk_size: int = 8) -> float:
+    total = 0.0
+    count = 0.0
+
+    for i in range(0, target.shape[0], chunk_size):
+        t = target[i:i+chunk_size]
+        p = pred[i:i+chunk_size]
+        m = mask[i:i+chunk_size] if mask is not None else None
+
+        diff = (t - p).abs()
+        denom = t + p
+        denom.add_(EPSILON)
+        frac_err = (2.0 * diff) / denom
+
+        if m is not None:
+            frac_err *= m
+            total += frac_err.sum().item()
+            count += m.sum().item()
+        else:
+            total += frac_err.sum().item()
+            count += frac_err.numel()
+
+        del t, p, m, diff, denom, frac_err
+
+    denom = max(count, 1.0)
+    return total / denom
 
 
 def compute_relative_error(reference: torch.Tensor, prediction: torch.Tensor) -> List[float]:
