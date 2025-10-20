@@ -13,7 +13,7 @@ from torch.optim.lr_scheduler import SequentialLR, LinearLR, CosineAnnealingLR
 from pytorch_lightning import seed_everything
 from typing import Union, Callable
 
-from src.models.vcnn import VCNN, VCNN_classic
+from src.models.vcnn import VCNN, VCNN_classic, VUnet
 from src.models.vclstm import ConvLSTM
 from src.models.vitae import ViTAE
 from src.utils.early_stopper import EarlyStopper
@@ -111,14 +111,15 @@ def safe_scheduler_step(scheduler: torch.optim.lr_scheduler.LRScheduler) -> None
 def get_dirs(model: nn.Module) -> tuple[str, str]:
 
     model_dir_map = {
+        VUnet: "vunet",
         VCNN_classic: "vcnn",
         VCNN: "vunet",
         ConvLSTM: "clstm",
         ViTAE: "vitae"
     }
 
-    model_dir = f"results/trained_models/{model_dir_map.get(type(model), 'unknown_model')}"
-    fig_dir = f"results/images/training/{model_dir_map.get(type(model), 'unknown_model')}"
+    model_dir = f"paper_results/trained_models/{model_dir_map.get(type(model), 'unknown_model')}"
+    fig_dir = f"paper_results/images/training/{model_dir_map.get(type(model), 'unknown_model')}"
 
     return model_dir, fig_dir
 

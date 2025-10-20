@@ -9,7 +9,7 @@ from torch.optim.optimizer import Optimizer
 from torch.utils.data import DataLoader
 from typing import Callable
 
-from src.models.vcnn import vcnn_tiny
+from src.models.vcnn import get_unet
 from src.datasets.vitae_dataset import VitaeDataset
 from src.utils.evaluation import compute_all_metrics
 
@@ -148,7 +148,7 @@ class ViTAE(nn.Module):
         self.decoder_embeddings = nn.Linear(enc_dim, patch_size[0] * patch_size[1] * enc_chans) # Linear layer to expand the dimension of a patch's embedding to the size of a patch
 
         if use_unet == 'unet':
-            self.decoder = vcnn_tiny(enc_chans, dec_dims[-1], unet_kernel_size, use_norm=True)
+            self.decoder = get_unet(enc_chans, dec_dims[-1])
         else:
             dec_dims = [enc_chans, *dec_dims]
             self.decoder = nn.Sequential(*[

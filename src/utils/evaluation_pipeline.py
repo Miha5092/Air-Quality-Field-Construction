@@ -13,6 +13,7 @@ from src.datasets.voronoi_datasets import load_data as load_voronoi_simulated
 from src.utils.evaluation import compute_relative_error, compute_rmse, compute_rrmse, compute_mean_fractional_error, compute_mean_fractional_bias
 
 
+@torch.no_grad()
 def evaluate(
     model: nn.Module,
     data_scaling_type: str,
@@ -25,15 +26,16 @@ def evaluate(
     
     # Decide where to save the results
     save_dirs_map = {
-        "VCNN": "results/predictions/vunet",
-        "VCNN_classic": "results/predictions/vcnn",
-        "ConvLSTM": "results/predictions/clstm",
-        "OptimizedModule": "results/predictions/clstm",
-        "ViTAE": "results/predictions/vitae"
+        "VCNN": "paper_results/predictions/vunet",
+        "VUnet": "paper_results/predictions/vunet",
+        "VCNN_classic": "paper_results/predictions/vcnn",
+        "ConvLSTM": "paper_results/predictions/clstm",
+        "OptimizedModule": "paper_results/predictions/clstm",
+        "ViTAE": "paper_results/predictions/vitae"
     }
 
     # Decide where to save the results
-    preds_dir = save_dirs_map.get(model.__class__.__name__, "results/predictions/unknown_model")
+    preds_dir = save_dirs_map.get(model.__class__.__name__, "paper_results/predictions/unknown_model")
     os.makedirs(preds_dir, exist_ok=True)
     preds_file = os.path.join(preds_dir, f"{experiment_name}_results.npz")
 
@@ -81,24 +83,26 @@ def evaluate(
         real_pollutants_mfb=results_on_real["pollutants_mfb"]
     )
 
+    logging.info(f"Saved evaluation results to {preds_file}")
 
 
 model_names_map = {
     "VCNN": "vunet",
+    "VUnet": "vunet",
     "VCNN_classic": "vcnn",
     "ConvLSTM": "clstm",
     "OptimizedModule": "clstm",
     "ViTAE": "vitae"
 }
 
-
+@torch.no_grad()
 def evaluate_on_simulated(
     model: nn.Module,
     data_scaling_type: str,
     timesteps: int,
 ) -> dict:
     
-    device: torch.device = torch.device("cuda" if torch.cuda.is_available() else "cpu"),
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     model_type = model_names_map.get(model.__class__.__name__)
     
@@ -112,7 +116,7 @@ def evaluate_on_simulated(
     dataloader = DataLoader(
         dataset,
         batch_size=64 if model_type != "clstm" else 32,
-        shuffle=False, num_workers=3, pin_memory=True
+        shuffle=False
     )
 
     model.eval()
@@ -132,6 +136,7 @@ def evaluate_on_simulated(
             # If we are working with the ConvLSTM model, we need to take the last timestep
             if model_type == "clstm":
                 preds = preds[:, -1]
+                ground_truth = ground_truth[:, -1]
 
             # The ViTAE model outputs both the encoder and decoder predictions, we only need the decoder predictions
             if model_type == "vitae":
@@ -147,6 +152,8 @@ def evaluate_on_simulated(
                 channel_count = stats["data_mean"].shape[1] if "data_mean" in stats else stats["Y_mean"].shape[1]
                 obs_shape = obs.shape
 
+            stats = _convert_stats(stats)
+
             obs = unscale(obs.reshape(-1, channel_count, obs.shape[-2], obs.shape[-1]).cpu().detach().numpy(), data_scaling_type, **stats).reshape(*obs_shape)
             ground_truth = unscale(ground_truth.float().numpy(), data_scaling_type, **stats)
             preds = unscale(preds.cpu().detach().numpy(), data_scaling_type, **stats)
@@ -156,18 +163,18 @@ def evaluate_on_simulated(
             ground_truths.append(ground_truth)
             predictions.append(preds)
 
-    observations = np.concatenate(observations)
-    ground_truths = torch.from_numpy(np.concatenate(ground_truths))
-    predictions = torch.from_numpy(np.concatenate(predictions))
+    observations = np.concatenate(observations).astype(np.float32)
+    ground_truths = torch.from_numpy(np.concatenate(ground_truths).astype(np.float32))
+    predictions = torch.from_numpy(np.concatenate(predictions).astype(np.float32))
 
     # ------- Compute the metrics -------
 
     # These metrics are computed globally (all pollutants together)
     global_re = np.mean(compute_relative_error(ground_truths, predictions))
-    global_rmse = compute_rmse(ground_truths, predictions).item()
-    global_rrmse = compute_rrmse(ground_truths, predictions).item()
-    global_mfe = compute_mean_fractional_error(ground_truths, predictions).item()
-    global_mfb = compute_mean_fractional_bias(ground_truths, predictions).item()
+    global_rmse = compute_rmse(ground_truths, predictions, None)
+    global_rrmse = compute_rrmse(ground_truths, predictions, None)
+    global_mfe = compute_mean_fractional_error(ground_truths, predictions, None)
+    global_mfb = compute_mean_fractional_bias(ground_truths, predictions, None)
 
     # These metrics are computed for each pollutant separately
     pollutants_re, pollutants_rmse, pollutants_rrmse, pollutants_mfe, pollutants_mfb = [], [], [], [], []
@@ -176,10 +183,10 @@ def evaluate_on_simulated(
         pollutant_predictions = predictions[:, i]
 
         pollutant_re = np.mean(compute_relative_error(pollutant_ground_truths, pollutant_predictions))    
-        pollutant_rmse = compute_rmse(pollutant_ground_truths, pollutant_predictions).item()
-        pollutant_rrmse = compute_rrmse(pollutant_ground_truths, pollutant_predictions).item()
-        pollutant_mfe = compute_mean_fractional_error(pollutant_ground_truths, pollutant_predictions).item()
-        pollutant_mfb = compute_mean_fractional_bias(pollutant_ground_truths, pollutant_predictions).item()
+        pollutant_rmse = compute_rmse(pollutant_ground_truths, pollutant_predictions, None)
+        pollutant_rrmse = compute_rrmse(pollutant_ground_truths, pollutant_predictions, None)
+        pollutant_mfe = compute_mean_fractional_error(pollutant_ground_truths, pollutant_predictions, None)
+        pollutant_mfb = compute_mean_fractional_bias(pollutant_ground_truths, pollutant_predictions, None)
 
         pollutants_re.append(pollutant_re)
         pollutants_rmse.append(pollutant_rmse)
@@ -209,14 +216,14 @@ def evaluate_on_simulated(
         "pollutants_mfb": pollutants_mfb
     }
 
-
+@torch.no_grad()
 def evaluate_on_real(
     model: nn.Module,
     data_scaling_type: str,
     timesteps: int,
 ) -> dict:
     
-    device: torch.device = torch.device("cuda" if torch.cuda.is_available() else "cpu"),
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     model_type = model_names_map.get(model.__class__.__name__)
     
@@ -224,7 +231,7 @@ def evaluate_on_real(
     dataloader = DataLoader(
         dataset,
         batch_size=64 if model_type != "clstm" else 32,
-        shuffle=False, num_workers=3, pin_memory=True
+        shuffle=False
     )
 
     model.eval()
@@ -263,19 +270,19 @@ def evaluate_on_real(
             target_masks.append(target_mask)
             predictions.append(preds)
 
-    observations = np.concatenate(observations)
-    ground_truths = torch.from_numpy(np.concatenate(ground_truths))
-    target_masks = torch.from_numpy(np.concatenate(target_masks))
-    predictions = torch.from_numpy(np.concatenate(predictions))
+    observations = np.concatenate(observations).astype(np.float32)
+    ground_truths = torch.from_numpy(np.concatenate(ground_truths).astype(np.float32))
+    target_masks = torch.from_numpy(np.concatenate(target_masks).astype(np.float32))
+    predictions = torch.from_numpy(np.concatenate(predictions).astype(np.float32))
 
     # ------- Compute the metrics -------
 
     # These metrics are computed globally (all pollutants together)
     global_re = np.mean(compute_relative_error(ground_truths * target_masks, predictions * target_masks))
-    global_rmse = compute_rmse(ground_truths, predictions, target_masks).item()
-    global_rrmse = compute_rrmse(ground_truths, predictions, target_masks).item()
-    global_mfe = compute_mean_fractional_error(ground_truths, predictions, target_masks).item()
-    global_mfb = compute_mean_fractional_bias(ground_truths, predictions, target_masks).item()
+    global_rmse = compute_rmse(ground_truths, predictions, target_masks)
+    global_rrmse = compute_rrmse(ground_truths, predictions, target_masks)
+    global_mfe = compute_mean_fractional_error(ground_truths, predictions, target_masks)
+    global_mfb = compute_mean_fractional_bias(ground_truths, predictions, target_masks)
 
     # These metrics are computed for each pollutant separately
     pollutants_re, pollutants_rmse, pollutants_rrmse, pollutants_mfe, pollutants_mfb = [], [], [], [], []
@@ -285,10 +292,10 @@ def evaluate_on_real(
         pollutant_target_masks = target_masks[:, i]
 
         pollutant_re = np.mean(compute_relative_error(pollutant_ground_truths * pollutant_target_masks, pollutant_predictions * pollutant_target_masks))    
-        pollutant_rmse = compute_rmse(pollutant_ground_truths, pollutant_predictions, pollutant_target_masks).item()
-        pollutant_rrmse = compute_rrmse(pollutant_ground_truths, pollutant_predictions, pollutant_target_masks).item()
-        pollutant_mfe = compute_mean_fractional_error(pollutant_ground_truths, pollutant_predictions, pollutant_target_masks).item()
-        pollutant_mfb = compute_mean_fractional_bias(pollutant_ground_truths, pollutant_predictions, pollutant_target_masks).item()
+        pollutant_rmse = compute_rmse(pollutant_ground_truths, pollutant_predictions, pollutant_target_masks)
+        pollutant_rrmse = compute_rrmse(pollutant_ground_truths, pollutant_predictions, pollutant_target_masks)
+        pollutant_mfe = compute_mean_fractional_error(pollutant_ground_truths, pollutant_predictions, pollutant_target_masks)
+        pollutant_mfb = compute_mean_fractional_bias(pollutant_ground_truths, pollutant_predictions, pollutant_target_masks)
 
         pollutants_re.append(pollutant_re)
         pollutants_rmse.append(pollutant_rmse)
@@ -318,3 +325,17 @@ def evaluate_on_real(
         "global_mfb": global_mfb,
         "pollutants_mfb": pollutants_mfb
     }
+
+
+def _convert_stats(stats: dict[str, any]) -> dict:
+    """
+    Convert stats values from lists to numpy arrays.
+    """
+    converted_stats = {}
+    for key, value in stats.items():
+        if key.startswith("Y"):
+            key = key.replace("Y", "data")
+        
+        converted_stats[key] = value
+
+    return converted_stats
