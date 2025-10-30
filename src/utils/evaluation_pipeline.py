@@ -11,7 +11,7 @@ from src.datasets.vitae_dataset import unscale
 from src.datasets.vitae_dataset import load_data as load_sparse_simulated
 from src.datasets.voronoi_datasets import load_data as load_voronoi_simulated
 from src.utils.evaluation import compute_relative_error, compute_rmse, compute_rrmse, compute_mean_fractional_error, compute_mean_fractional_bias
-
+from src.models.diffusion import EvaluateDiffusionModel
 
 @torch.no_grad()
 def evaluate(
@@ -31,7 +31,8 @@ def evaluate(
         "VCNN_classic": "paper_results/predictions/vcnn",
         "ConvLSTM": "paper_results/predictions/clstm",
         "OptimizedModule": "paper_results/predictions/clstm",
-        "ViTAE": "paper_results/predictions/vitae"
+        "ViTAE": "paper_results/predictions/vitae",
+        "Diffusion": "paper_results/predictions/diffusion"
     }
 
     # Decide where to save the results
@@ -92,7 +93,8 @@ model_names_map = {
     "VCNN_classic": "vcnn",
     "ConvLSTM": "clstm",
     "OptimizedModule": "clstm",
-    "ViTAE": "vitae"
+    "ViTAE": "vitae",
+    "Diffusion": "diffusion"
 }
 
 @torch.no_grad()
@@ -110,6 +112,8 @@ def evaluate_on_simulated(
         _, _, dataset, stats = load_sparse_simulated(sensor_type="real-random", scaling_type=data_scaling_type, timesteps=timesteps)
     elif model_type == "clstm":
         _, _, dataset, stats = load_voronoi_simulated(sensor_type="real-random", scaling_type=data_scaling_type, timesteps=timesteps, channel_timesteps=False)
+    elif model_type == "diffusion":
+        _, _, dataset, stats = load_voronoi_simulated(sensor_type="real-random", scaling_type=data_scaling_type, timesteps=timesteps, channel_timesteps=True, diffusion=True)
     else:
         _, _, dataset, stats = load_voronoi_simulated(sensor_type="real-random", scaling_type=data_scaling_type, timesteps=timesteps, channel_timesteps=True)
 
@@ -118,9 +122,11 @@ def evaluate_on_simulated(
         batch_size=64 if model_type != "clstm" else 32,
         shuffle=False
     )
-
-    model.eval()
-    model.to(device)
+    if model_type == "diffusion":
+        model_eval = EvaluateDiffusionModel(model.denoiser_model, model.cond_model, device=device)
+    else:
+        model.eval()
+        model.to(device)
 
     observations, ground_truths, predictions = [], [], []
 
@@ -128,10 +134,16 @@ def evaluate_on_simulated(
         for batch in dataloader:
             obs = batch[0]
             ground_truth = batch[1]
+            if model_type=="diffusion":
+                mask = batch[2]
+                mask = mask.to(device)
 
             obs = obs.to(device).float()
 
-            preds = model(obs)
+            if model_type=="diffusion":
+                preds = model_eval.ensemble_prediction(ground_truth, mask, obs, num_inf_steps=10, num_ensem_steps=20, device=device)
+            else:
+                preds = model(obs)
 
             # If we are working with the ConvLSTM model, we need to take the last timestep
             if model_type == "clstm":
@@ -143,6 +155,10 @@ def evaluate_on_simulated(
                 preds = preds[-1]
 
             # TODO: Add any required post-processing for the other models here
+
+            # The diffusion model outputs all the samples from ensemble [1,E]. Choose the last sample
+            if model_type=="diffusion":
+                preds = preds[-1]
 
             # Scale the data back to its original values
             if data_scaling_type == "min-max":
@@ -233,17 +249,21 @@ def evaluate_on_real(
         batch_size=64 if model_type != "clstm" else 32,
         shuffle=False
     )
-
-    model.eval()
-    model.to(device)
+    if model_type == "diffusion":
+        model_eval = EvaluateDiffusionModel(model.denoiser_model, model.cond_model, device=device)
+    else:
+        model.eval()
+        model.to(device)
 
     observations, ground_truths, predictions, target_masks = [], [], [], []
 
     with torch.no_grad():
         for obs, ground_truth, target_mask in dataloader:
             obs = obs.to(device).float()
-
-            preds = model(obs)
+            if model_type == "diffusion":
+                preds = model_eval.ensemble_prediction(ground_truth, target_mask, obs, num_inf_steps=10, num_ensem_steps=20, device=device)
+            else:
+                preds = model(obs)
 
             # If we are working with the ConvLSTM model, we need to take the last timestep
             if model_type == "clstm":
@@ -254,6 +274,10 @@ def evaluate_on_real(
                 preds = preds[-1]
 
             # TODO: Add any required post-processing for the other models here
+
+            # The diffusion model outputs all the samples from ensemble [1,E]. Choose the last sample
+            if model_type=="diffusion":
+                preds = preds[-1]
 
             # Scale the data back to its original values
             channel_count = stats["data_min"].shape[1]
