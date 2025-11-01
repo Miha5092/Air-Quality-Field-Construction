@@ -259,10 +259,11 @@ def evaluate_on_real(
 
     with torch.no_grad():
         for obs, ground_truth, target_mask in dataloader:
-            obs = obs.to(device).float()
             if model_type == "diffusion":
-                preds = model_eval.ensemble_prediction(ground_truth, target_mask, obs, num_inf_steps=10, num_ensem_steps=20, device=device)
+                obs_ground_truth = obs[0]*obs[1]
+                preds = model_eval.ensemble_prediction(obs_ground_truth, obs[1], obs[0], num_inf_steps=10, num_ensem_steps=20, device=device)
             else:
+                obs = obs.to(device).float()
                 preds = model(obs)
 
             # If we are working with the ConvLSTM model, we need to take the last timestep

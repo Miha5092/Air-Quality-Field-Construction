@@ -26,7 +26,7 @@ class RealObsDataset(Dataset):
         self.obs_mask = obs_mask
         self.target_mask = target_mask
 
-        assert model_type in ["vitae", "vunet", "vcnn", "vunet", "clstm"], f"Model type {model_type} must be one of 'vitae', 'vcnn', 'vunet', or 'clstm'."
+        assert model_type in ["vitae", "vunet", "vcnn", "vunet", "clstm", "diffusion"], f"Model type {model_type} must be one of 'vitae', 'vcnn', 'vunet', or 'clstm'."
         self.model_type = model_type
 
         self.timesteps = timesteps
@@ -49,6 +49,12 @@ class RealObsDataset(Dataset):
             obs_mask = obs_mask.reshape(obs_mask.shape[0] * obs_mask.shape[1], obs_mask.shape[2], obs_mask.shape[3])
 
             obs = torch.cat((obs, obs_mask), dim=0)
+
+        if self.model_type == "diffusion":
+            obs_mask = obs_mask.reshape(obs_mask.shape[0] * obs_mask.shape[1], obs_mask.shape[2], obs_mask.shape[3])
+            obs_list = [obs, obs_mask]
+            return obs_list, target, target_mask
+
         elif self.model_type == "clstm":
             obs_mask = obs_mask.expand(obs.size(0), -1, -1, -1)
             obs = torch.cat((obs, obs_mask), dim=1)
