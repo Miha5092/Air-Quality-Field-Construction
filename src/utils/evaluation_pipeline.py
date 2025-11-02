@@ -260,8 +260,9 @@ def evaluate_on_real(
     with torch.no_grad():
         for obs, ground_truth, target_mask in dataloader:
             if model_type == "diffusion":
-                obs_ground_truth = obs[0]*obs[1]
-                preds = model_eval.ensemble_prediction(obs_ground_truth, obs[1], obs[0], num_inf_steps=10, num_ensem_steps=20, device=device)
+                obs_mask = obs[1].to(device).float()
+                obs = obs[0].to(device).float()
+                preds = model_eval.ensemble_prediction(obs*obs_mask, obs_mask, obs, num_inf_steps=10, num_ensem_steps=20, device=device)
             else:
                 obs = obs.to(device).float()
                 preds = model(obs)
