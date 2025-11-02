@@ -4,5 +4,6 @@ __pycache__/
 *.pyc
 *.pyo
 results/*
+paper_results/*
 *.out
 report_images/*

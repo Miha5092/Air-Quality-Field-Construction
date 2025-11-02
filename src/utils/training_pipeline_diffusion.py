@@ -292,7 +292,7 @@ def train(
         
         os.makedirs(fig_dir, exist_ok=True)
         image_path = os.path.join(fig_dir, f"{experiment_name}.png")
-        plot_training(training_losses, relative_errors_history, image_path)
+        # plot_training(training_losses, relative_errors_history, image_path)
 
     if model_path is not None and save:
         try:

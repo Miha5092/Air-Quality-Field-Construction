@@ -52,8 +52,8 @@ class RealObsDataset(Dataset):
 
         if self.model_type == "diffusion":
             obs_mask = obs_mask.reshape(obs_mask.shape[0] * obs_mask.shape[1], obs_mask.shape[2], obs_mask.shape[3])
-            obs_list = [obs, obs_mask]
-            return obs_list, target, target_mask
+            obs_list = [obs.float(), obs_mask.float()]
+            return obs_list, target.float(), target_mask.float()
 
         elif self.model_type == "clstm":
             obs_mask = obs_mask.expand(obs.size(0), -1, -1, -1)
