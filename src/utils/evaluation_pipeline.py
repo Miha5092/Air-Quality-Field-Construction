@@ -275,14 +275,15 @@ def evaluate_on_real(
             if model_type == "vitae":
                 preds = preds[-1]
 
-            # TODO: Add any required post-processing for the other models here
-
             # The diffusion model outputs all the samples from ensemble [1,E]. Choose the last sample
             if model_type=="diffusion":
                 preds = preds[-1]
 
             # Scale the data back to its original values
-            channel_count = stats["data_min"].shape[1]
+            if model_type == "diffusion":
+                channel_count = stats["data_std"].shape[1]
+            else:
+                channel_count = stats["data_min"].shape[1]
             obs_shape = obs.shape
 
             obs = unscale(obs.reshape(-1, channel_count, obs.shape[-2], obs.shape[-1]).cpu().detach().numpy(), data_scaling_type, **stats).reshape(*obs_shape)

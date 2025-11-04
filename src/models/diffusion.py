@@ -370,7 +370,7 @@ class EvaluateDiffusionModel():
         self.cond_model.eval()
 
         ensem_output_list = []
-        ensemble_output = torch.zeros_like(org_img)
+        ensemble_output = torch.zeros_like(org_img, device="cpu")
         with torch.no_grad():
             for i in range(num_ensem_steps):
                 noise_scheduler_ensem = scheduler(algorithm_type='sde-dpmsolver++')

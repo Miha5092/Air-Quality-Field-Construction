@@ -495,16 +495,12 @@ def load_data(
     Y_val = all_modalities_Y[val_indices]
     Y_train = all_modalities_Y[train_indices]
 
-    if scaling_type == "min-max":
-        stats = {
-            'Y_max': Y_train.max(axis=(0, 2, 3), keepdims=True),
-            'Y_min': Y_train.min(axis=(0, 2, 3), keepdims=True),
-        }
-    else:
-        stats = {
-            'Y_mean': Y_train.mean(axis=(0, 2, 3), keepdims=True),
-            'Y_std': Y_train.std(axis=(0, 2, 3), keepdims=True) + 1e-8,
-        }
+    stats = {
+        'Y_min': X_train.min(axis=(0, 2, 3), keepdims=True),
+        'Y_max': X_train.max(axis=(0, 2, 3), keepdims=True),
+        'Y_mean': X_train.mean(axis=(0, 2, 3), keepdims=True),
+        'Y_std': X_train.std(axis=(0, 2, 3), keepdims=True),
+    }
 
     if diffusion:
         train_dataset = DiffusionDataset(

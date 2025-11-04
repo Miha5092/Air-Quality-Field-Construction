@@ -104,6 +104,8 @@ def load_data(
     stats = {
         'data_min': stats['Y_min'] if model_type != "vitae" else stats['data_min'],
         'data_max': stats['Y_max'] if model_type != "vitae" else stats['data_max'],
+        'data_mean': stats['Y_mean'] if model_type != "vitae" else stats['data_mean'],
+        'data_std': stats['Y_std'] if model_type != "vitae" else stats['data_std'],
     }
 
     real_data = torch.from_numpy(read_real_observation_files())
@@ -153,13 +155,18 @@ def load_data(
     if model_type in ["vcnn", "vunet", "clstm"]:
         observations = batched_voronoi_tessellation(obs_mask, observations)
 
-    # Scale the real data using the statistics from the training set.
-    data_min = stats['data_min']
-    data_max = stats['data_max']
-    
+    # Scale the real data using the statistics from the training set.    
     if scale:
-        observations = (observations - data_min) / (data_max - data_min + 1e-8)
-        targets = (targets - data_min) / (data_max - data_min + 1e-8)
+        if model_type == "diffusion":
+            data_mean = stats['data_mean']
+            data_std = stats['data_std']
+            observations = (observations - data_mean) / (data_std + 1e-8)
+            targets = (targets - data_mean) / (data_std + 1e-8)
+        else:
+            data_min = stats['data_min']
+            data_max = stats['data_max']
+            observations = (observations - data_min) / (data_max - data_min + 1e-8)
+            targets = (targets - data_min) / (data_max - data_min + 1e-8)
         
     dataset = RealObsDataset(
         observations=observations,
