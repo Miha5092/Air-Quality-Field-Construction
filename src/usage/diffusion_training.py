@@ -127,7 +127,7 @@ if __name__ == '__main__':
     parser.add_argument("--model_type", type=str, default="diffusion")
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
 
-    parser.add_argument("--sensor_type", type=str, default="real", help="Type of sensors: fixed (30, 48, 108), fixed-random, random, or real")
+    parser.add_argument("--sensor_type", type=str, default="real-random", help="Type of sensors: fixed (30, 48, 108), fixed-random, random, or real")
     parser.add_argument("--sensor_number", type=int, default=30, help="Number of sensors")
     parser.add_argument("--scaling_type", type=str, default="standard", help="Scaling type, e.g., 'standard' or 'min-max'")
     parser.add_argument("--timesteps", type=int, default=1, help="How many consecutive timesteps to be used for a training example.")
