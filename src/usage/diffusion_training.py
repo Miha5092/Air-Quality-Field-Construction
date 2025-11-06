@@ -144,7 +144,7 @@ if __name__ == '__main__':
     
     parser.add_argument("--kernel_size", type=int, default=3, help="Kernel size")
     parser.add_argument("--use_norm", action="store_true", default=False, help="Use normalization layers")
-    parser.add_argument("--load_checkpoint", action="store_true", help="Use this to load a checkpoint")
+    parser.add_argument("-lcp", "--load_checkpoint", action="store_true", help="Use this to load a checkpoint")
 
     args = parser.parse_args()
 
