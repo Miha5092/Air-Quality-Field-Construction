@@ -152,7 +152,7 @@ def load_data(
     target_mask = target_mask[indices]
 
     # If we are working with a Voronoi model we need to create the map
-    if model_type in ["vcnn", "vunet", "clstm"]:
+    if model_type in ["vcnn", "vunet", "clstm", "diffusion"]:
         observations = batched_voronoi_tessellation(obs_mask, observations)
 
     # Scale the real data using the statistics from the training set.    
