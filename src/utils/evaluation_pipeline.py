@@ -55,6 +55,9 @@ def evaluate(
         # Save the RMSe
         simulated_global_rmse=results_on_simulated["global_rmse"],
         simulated_pollutants_rmse=results_on_simulated["pollutants_rmse"],
+        # Save the RRMSe
+        simulated_global_rrmse=results_on_simulated["global_rrmse"],
+        simulated_pollutants_rrmse=results_on_simulated["pollutants_rrmse"],
         # Save the MFE
         simulated_global_mfe=results_on_simulated["global_mfe"],
         simulated_pollutants_mfe=results_on_simulated["pollutants_mfe"],
@@ -79,6 +82,9 @@ def evaluate(
         # Save the RMSe
         real_global_rmse=results_on_real["global_rmse"],
         real_pollutants_rmse=results_on_real["pollutants_rmse"],
+        # Save the RRMSe
+        real_global_rrmse=results_on_real["global_rrmse"],
+        real_pollutants_rrmse=results_on_real["pollutants_rrmse"],
         # Save the MFE
         real_global_mfe=results_on_real["global_mfe"],
         real_pollutants_mfe=results_on_real["pollutants_mfe"],
@@ -121,6 +127,9 @@ def ensemble_evaluate(
             # Save the RMSe
             simulated_global_rmse=results_on_simulated["global_rmse"],
             simulated_pollutants_rmse=results_on_simulated["pollutants_rmse"],
+            # Save the RRMSe
+            simulated_global_rrmse=results_on_simulated["global_rrmse"],
+            simulated_pollutants_rrmse=results_on_simulated["pollutants_rrmse"],
             # Save the MFE
             simulated_global_mfe=results_on_simulated["global_mfe"],
             simulated_pollutants_mfe=results_on_simulated["pollutants_mfe"],
@@ -476,19 +485,19 @@ def evaluate_on_diffusion(model: nn.Module,
     for k in range(20):
         predictions[k] = torch.from_numpy(np.concatenate(predictions[k]).astype(np.float32))
 
-        global_re = np.mean(compute_relative_error(ground_truths, predictions[k]))
-        global_rmse = compute_rmse(ground_truths, predictions[k], None)
-        global_rrmse = compute_rrmse(ground_truths, predictions[k], None)
-        global_mfe = compute_mean_fractional_error(ground_truths, predictions[k], None)
-        global_mfb = compute_mean_fractional_bias(ground_truths, predictions[k], None)
-        global_ssim = np.mean(compute_SSIM(ground_truths, predictions[k]))
+        global_re_k = np.mean(compute_relative_error(ground_truths, predictions[k]))
+        global_rmse_k = compute_rmse(ground_truths, predictions[k], None)
+        global_rrmse_k = compute_rrmse(ground_truths, predictions[k], None)
+        global_mfe_k = compute_mean_fractional_error(ground_truths, predictions[k], None)
+        global_mfb_k = compute_mean_fractional_bias(ground_truths, predictions[k], None)
+        global_ssim_k = np.mean(compute_SSIM(ground_truths, predictions[k]))
 
-        global_re.append(global_re)
-        global_rmse.append(global_rmse)
-        global_rrmse.append(global_rrmse)
-        global_mfe.append(global_mfe)
-        global_mfb.append(global_mfb)
-        global_ssim.append(global_ssim)
+        global_re.append(global_re_k)
+        global_rmse.append(global_rmse_k)
+        global_rrmse.append(global_rrmse_k)
+        global_mfe.append(global_mfe_k)
+        global_mfb.append(global_mfb_k)
+        global_ssim.append(global_ssim_k)
 
     # These metrics are computed for each pollutant separately
     pollutants_re, pollutants_rmse, pollutants_rrmse, pollutants_mfe, pollutants_mfb, pollutants_ssim = [], [], [], [], [], []
