@@ -250,7 +250,7 @@ def evaluate_on_simulated(
     global_rrmse = compute_rrmse(ground_truths, predictions, None)
     global_mfe = compute_mean_fractional_error(ground_truths, predictions, None)
     global_mfb = compute_mean_fractional_bias(ground_truths, predictions, None)
-    global_ssim = np.mean(compute_SSIM(ground_truths, predictions))
+    global_ssim = np.mean(compute_SSIM(ground_truths.numpy(), predictions.numpy()))
 
     # These metrics are computed for each pollutant separately
     pollutants_re, pollutants_rmse, pollutants_rrmse, pollutants_mfe, pollutants_mfb, pollutants_ssim = [], [], [], [], [], []
@@ -263,14 +263,14 @@ def evaluate_on_simulated(
         pollutant_rrmse = compute_rrmse(pollutant_ground_truths, pollutant_predictions, None)
         pollutant_mfe = compute_mean_fractional_error(pollutant_ground_truths, pollutant_predictions, None)
         pollutant_mfb = compute_mean_fractional_bias(pollutant_ground_truths, pollutant_predictions, None)
-        pollutants_ssim = np.mean(compute_SSIM(ground_truths, pollutant_predictions))
+        pollutant_ssim = np.mean(compute_SSIM(pollutant_ground_truths.numpy()[:, np.newaxis], pollutant_predictions.numpy()[:, np.newaxis]))
 
         pollutants_re.append(pollutant_re)
         pollutants_rmse.append(pollutant_rmse)
         pollutants_rrmse.append(pollutant_rrmse)
         pollutants_mfe.append(pollutant_mfe)
         pollutants_mfb.append(pollutant_mfb)
-        pollutants_ssim.append(pollutants_ssim)
+        pollutants_ssim.append(pollutant_ssim)
 
     return {
         # Save the data used to compute the metrics
@@ -294,7 +294,7 @@ def evaluate_on_simulated(
         "pollutants_mfb": pollutants_mfb,
         # Save the SSIM
         "global_ssim": global_ssim,
-        "pollutant_ssim": pollutants_ssim,
+        "pollutants_ssim": pollutants_ssim,
     }
 
 @torch.no_grad()

@@ -16,7 +16,7 @@ from timm.layers.pos_embed_sincos import build_sincos2d_pos_embed
 from src.utils.evaluation import compute_all_metrics
 
 
-def get_model(train_dataset:Dataset, load_checkpoint:bool, device):
+def get_model(train_dataset:Dataset, load_checkpoint:bool, device, weights_path: str = 'model_weights/diffusion.pth'):
 
     input_tensor = train_dataset[0][0]
     img_size = input_tensor.shape[1:]
@@ -51,7 +51,7 @@ def get_model(train_dataset:Dataset, load_checkpoint:bool, device):
         'mlp_ratio': cond_encoder['mlp_ratio']
     }
 
-    base_model = Diffusion(img_size, unet_config, cond_config, device='cuda', in_channels=input_channels)
+    base_model = Diffusion(img_size, unet_config, cond_config, device='cuda', in_channels=input_channels, weights_path=weights_path)
 
     return base_model
 
@@ -115,10 +115,10 @@ def Unet2DCondition(config):
 
 
 class Diffusion():
-    def __init__(self, img_size, unet_config, cond_config, device='cuda', in_channels=4):
+    def __init__(self, img_size, unet_config, cond_config, device='cuda', in_channels=4, weights_path='model_weights/diffusion.pth'):
         super(Diffusion, self).__init__()
 
-        self.model_path = 'model_weights/diffusion.pth'
+        self.model_path = weights_path
         self.in_chanl = in_channels
 
         self.cond_model = ConditionEncoder(img_size=img_size,      
