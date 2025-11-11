@@ -466,7 +466,6 @@ def evaluate_on_diffusion(model: nn.Module,
 
             obs = unscale(obs.reshape(-1, channel_count, obs.shape[-2], obs.shape[-1]).cpu().detach().numpy(), data_scaling_type, **stats).reshape(*obs_shape)
             ground_truth = unscale(ground_truth.float().numpy(), data_scaling_type, **stats)
-            preds = unscale(preds.cpu().detach().numpy(), data_scaling_type, **stats)
 
             for k in range(20):
                 preds[k] = unscale(preds[k].cpu().detach().numpy(), data_scaling_type, **stats)
