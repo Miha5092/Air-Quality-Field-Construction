@@ -4,7 +4,7 @@ import logging
 
 from src.models.diffusion import get_model as get_diffusion_model
 from src.datasets.voronoi_datasets import load_data
-from src.utils.evaluation_pipeline import evaluate
+from src.utils.evaluation_pipeline import evaluate, ensemble_evaluate
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 
@@ -14,6 +14,7 @@ def eval_diffusion(
     model_path: str,
     sensor_type: str,
     seed: int,
+    eval_ensemble: bool,
 ):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -49,6 +50,13 @@ def eval_diffusion(
         timesteps=1,
         experiment_name=experiment_name,
     )
+    if eval_ensemble:
+        ensemble_evaluate(
+            model=model,
+            data_scaling_type="standard",
+            timesteps=1,
+            experiment_name=experiment_name,
+        )
 
 
 def eval_unet(
@@ -68,6 +76,7 @@ def main(
     seed: int,
     noise: str,
     timesteps: int,
+    eval_ensemble:bool,
 ):
     if model_type == "diffusion":
         eval_diffusion(
@@ -75,6 +84,7 @@ def main(
             model_path=model_path,
             sensor_type=sensor_type,
             seed=seed,
+            eval_ensemble=eval_ensemble
         )
     else:
         raise ValueError(f"Unknown model type: {model_type}")
@@ -90,6 +100,7 @@ if __name__ == "__main__":
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
     parser.add_argument("--timesteps", type=int, default=1, help="How many consecutive timesteps to be used for a training example.")
     parser.add_argument("--noise", type=str, default="none", choices=["none", "gaussian", "perlin"])
+    parser.add_argument("--ensemble", action="store_true", help="Use this to evaluate ensemble effect on diffusion model")
 
     args = parser.parse_args()
 
@@ -101,4 +112,5 @@ if __name__ == "__main__":
         seed=args.seed,
         noise=args.noise,
         timesteps=args.timesteps,
+        eval_ensemble=args.ensemble,
     )
