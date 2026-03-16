@@ -10,6 +10,7 @@ from pykrige.ok import OrdinaryKriging
 from src.datasets.vitae_dataset import load_data
 from src.utils.evaluation import compute_all_metrics, compute_relative_error
 from src.datasets.real_obs_dataset import load_data as load_real
+from src.utils.evaluation_pipeline import evaluate, compute_real_metrics, compute_simulated_metrics
 
 def make_variogram_params(variogram_model: str, params: dict) -> dict | None:
     try:
@@ -265,9 +266,122 @@ def predict_real():
     )
 
 
+def evaluate_paper_simulated():
+    best_params = torch.load("results/trained_models/kriging/params/best_params.pth")
+
+    # Timesteps is kept at 8 for consistency with all the other models.
+    _, _, dataset, _ = load_data(sensor_type="real-random", timesteps=1)
+
+    obs = torch.stack([obs[-4:, :, :] for obs, _, _ in dataset])
+    gts = torch.stack([gt for _, gt, _ in dataset])
+
+    pred = kriging_interpolate_tensor(
+        obs.numpy(),
+        best_params.get("variogram_model", None),
+        best_params.get("variogram_parameters", None),
+        best_params.get("nlags", None),
+        best_params.get("weight", None),
+        best_params.get("anisotropy_scaling", None),
+        best_params.get("anisotropy_angle", None),
+        best_params.get("exact_values", None)
+        )
+
+    return compute_simulated_metrics(obs, gts, torch.from_numpy(pred))
+
+
+def evaluate_paper_real():
+    best_params = torch.load("results/trained_models/kriging/params/best_params.pth")
+
+    # Timesteps is kept at 8 for consistency with all the other models.
+    dataset, _ = load_real(model_type="vitae", sensor_type="real-random", timesteps=8, scale=False)
+
+    obs = torch.stack([obs[-4:, :, :] for obs, _, _ in dataset])
+    gts = torch.stack([gt for _, gt, _ in dataset])
+    mask = torch.stack([mask for _, _, mask in dataset])
+
+    pred = kriging_interpolate_tensor(
+        obs.numpy(),
+        best_params.get("variogram_model", None),
+        best_params.get("variogram_parameters", None),
+        best_params.get("nlags", None),
+        best_params.get("weight", None),
+        best_params.get("anisotropy_scaling", None),
+        best_params.get("anisotropy_angle", None),
+        best_params.get("exact_values", None)
+        )
+
+    return compute_real_metrics(obs, gts, torch.from_numpy(pred), mask)
+
+
+def evaluate_paper():
+    results_on_simulated = evaluate_paper_simulated()
+    results_on_real = evaluate_paper_real()
+
+        # Decide where to save the results
+    preds_dir = "paper_results/predictions/kriging"
+    os.makedirs(preds_dir, exist_ok=True)
+    preds_file = os.path.join(preds_dir, f"kriging_paper_results.npz")
+
+    np.savez_compressed(
+        preds_file,
+
+        # ------ Saving the results on the simulated data ------
+
+        # Save the data used to compute the metrics
+        simulated_observations=results_on_simulated["observations"],
+        simulated_ground_truths=results_on_simulated["ground_truths"],
+        simulated_predictions=results_on_simulated["predictions"],
+        # Save the relative error
+        simulated_global_re=results_on_simulated["global_re"],
+        simulated_pollutants_re=results_on_simulated["pollutants_re"],
+        # Save the RMSe
+        simulated_global_rmse=results_on_simulated["global_rmse"],
+        simulated_pollutants_rmse=results_on_simulated["pollutants_rmse"],
+        # Save the RRMSe
+        simulated_global_rrmse=results_on_simulated["global_rrmse"],
+        simulated_pollutants_rrmse=results_on_simulated["pollutants_rrmse"],
+        # Save the MFE
+        simulated_global_mfe=results_on_simulated["global_mfe"],
+        simulated_pollutants_mfe=results_on_simulated["pollutants_mfe"],
+        # Save the MFB
+        simulated_global_mfb=results_on_simulated["global_mfb"],
+        simulated_pollutants_mfb=results_on_simulated["pollutants_mfb"],
+        # Save SSIM
+        simulated_global_ssim = results_on_simulated["global_ssim"],
+        simulated_pollutants_ssim = results_on_simulated["pollutants_ssim"],
+
+
+        # ------ Saving the results on the real data ------
+
+        # Save the data used to compute the metrics
+        real_observations=results_on_real["observations"],
+        real_ground_truths=results_on_real["ground_truths"],
+        real_predictions=results_on_real["predictions"],
+        real_target_masks=results_on_real["target_masks"],
+        # Save the relative error
+        real_global_re=results_on_real["global_re"],
+        real_pollutants_re=results_on_real["pollutants_re"],
+        # Save the RMSe
+        real_global_rmse=results_on_real["global_rmse"],
+        real_pollutants_rmse=results_on_real["pollutants_rmse"],
+        # Save the RRMSe
+        real_global_rrmse=results_on_real["global_rrmse"],
+        real_pollutants_rrmse=results_on_real["pollutants_rrmse"],
+        # Save the MFE
+        real_global_mfe=results_on_real["global_mfe"],
+        real_pollutants_mfe=results_on_real["pollutants_mfe"],
+        # Save the MFB
+        real_global_mfb=results_on_real["global_mfb"],
+        real_pollutants_mfb=results_on_real["pollutants_mfb"]
+    )
+
+    print(f"Saved evaluation results to {preds_file}", flush=True)
+
+
 if __name__ == "__main__":
     seed = 42
     n_trials = 100
 
-    best_params = tune_parameters(seed=seed, n_trials=n_trials)
-    predict_real()
+    # best_params = tune_parameters(seed=seed, n_trials=n_trials)
+    # predict_real()
+    evaluate_paper()

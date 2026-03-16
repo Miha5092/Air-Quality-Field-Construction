@@ -95,7 +95,7 @@ def compute_mean_fractional_bias(target: torch.Tensor, pred: torch.Tensor, mask:
         m = mask[i:i+chunk_size] if mask is not None else None
 
         numerator = t - p
-        denominator = t + p
+        denominator = t
         denominator.add_(EPSILON)
 
         frac_bias = (2.0 * numerator) / denominator
@@ -125,7 +125,7 @@ def compute_mean_fractional_error(target: torch.Tensor, pred: torch.Tensor, mask
         m = mask[i:i+chunk_size] if mask is not None else None
 
         diff = (t - p).abs()
-        denom = t + p
+        denom = t
         denom.add_(EPSILON)
         frac_err = (2.0 * diff) / denom
 

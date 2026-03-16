@@ -26,7 +26,7 @@ class RealObsDataset(Dataset):
         self.obs_mask = obs_mask
         self.target_mask = target_mask
 
-        assert model_type in ["vitae", "vunet", "vcnn", "vunet", "clstm"], f"Model type {model_type} must be one of 'vitae', 'vcnn', 'vunet', or 'clstm'."
+        assert model_type in ["vitae", "vunet", "vcnn", "vunet", "clstm", "diffusion"], f"Model type {model_type} must be one of 'vitae', 'vcnn', 'vunet', or 'clstm'."
         self.model_type = model_type
 
         self.timesteps = timesteps
@@ -49,6 +49,12 @@ class RealObsDataset(Dataset):
             obs_mask = obs_mask.reshape(obs_mask.shape[0] * obs_mask.shape[1], obs_mask.shape[2], obs_mask.shape[3])
 
             obs = torch.cat((obs, obs_mask), dim=0)
+
+        if self.model_type == "diffusion":
+            obs_mask = obs_mask.reshape(obs_mask.shape[0] * obs_mask.shape[1], obs_mask.shape[2], obs_mask.shape[3])
+            obs_list = [obs.float(), obs_mask.float()]
+            return obs_list, target.float(), target_mask.float()
+
         elif self.model_type == "clstm":
             obs_mask = obs_mask.expand(obs.size(0), -1, -1, -1)
             obs = torch.cat((obs, obs_mask), dim=1)
@@ -98,6 +104,8 @@ def load_data(
     stats = {
         'data_min': stats['Y_min'] if model_type != "vitae" else stats['data_min'],
         'data_max': stats['Y_max'] if model_type != "vitae" else stats['data_max'],
+        'data_mean': stats['Y_mean'] if model_type != "vitae" else stats['data_mean'],
+        'data_std': stats['Y_std'] if model_type != "vitae" else stats['data_std'],
     }
 
     real_data = torch.from_numpy(read_real_observation_files())
@@ -144,16 +152,21 @@ def load_data(
     target_mask = target_mask[indices]
 
     # If we are working with a Voronoi model we need to create the map
-    if model_type in ["vcnn", "vunet", "clstm"]:
+    if model_type in ["vcnn", "vunet", "clstm", "diffusion"]:
         observations = batched_voronoi_tessellation(obs_mask, observations)
 
-    # Scale the real data using the statistics from the training set.
-    data_min = stats['data_min']
-    data_max = stats['data_max']
-    
+    # Scale the real data using the statistics from the training set.    
     if scale:
-        observations = (observations - data_min) / (data_max - data_min + 1e-8)
-        targets = (targets - data_min) / (data_max - data_min + 1e-8)
+        if model_type == "diffusion":
+            data_mean = stats['data_mean']
+            data_std = stats['data_std']
+            observations = (observations - data_mean) / (data_std + 1e-8)
+            targets = (targets - data_mean) / (data_std + 1e-8)
+        else:
+            data_min = stats['data_min']
+            data_max = stats['data_max']
+            observations = (observations - data_min) / (data_max - data_min + 1e-8)
+            targets = (targets - data_min) / (data_max - data_min + 1e-8)
         
     dataset = RealObsDataset(
         observations=observations,

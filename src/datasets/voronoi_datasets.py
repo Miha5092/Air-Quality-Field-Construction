@@ -330,6 +330,103 @@ class VCLSTMDataset(Dataset):
 
         self.X = X.float().numpy()
         self.Y = Y.float().numpy()
+
+class DiffusionDataset(Dataset):
+    def __init__(
+            self, 
+            X: np.ndarray, 
+            Y: np.ndarray, 
+            mask: np.ndarray, 
+            sensor_type: str,
+            sensor_number: int,
+            scaling_type: str = 'min-max',
+            timesteps: int = 1,
+            timesteps_jump: int = 1,
+            seed: int = 42,
+            noise: str = 'none',
+            full_noise: bool = False,
+            noise_params: dict = None,
+            **stats
+            ):
+
+        self.sensor_type = sensor_type
+        self.sensor_number = sensor_number
+        self.timesteps = timesteps
+        self.jump = timesteps_jump
+        self.noise = noise
+        self.full_noise = full_noise
+        self.noise_params = noise_params
+
+        self.seed = seed
+        seed_everything(seed=seed, verbose=False)
+
+        if sensor_type != 'random':
+            X = torch.Tensor(scale(X, scaling_type, stats))
+            Y = torch.Tensor(scale(Y, scaling_type, stats))
+            
+            mask = torch.Tensor(mask)
+        else:
+            X = torch.empty(0)
+            Y = torch.Tensor(scale(Y, scaling_type, stats))
+
+        if self.noise != 'none' and sensor_type in ['real', 'real-random']:
+            X, Y = generate_noisy_voronoi(mask, Y, noise_type=self.noise, full_noise=self.full_noise, noise_params=self.noise_params, seed=self.seed)
+
+        self.get_count = 0
+
+        # Store the data
+        self.mask = mask
+        self.X = X
+        self.Y = Y
+
+
+    def __len__(self):
+        return len(self.Y) - self.timesteps + 1
+
+    def __getitem__(self, idx):
+        Y = self.Y[idx: idx + self.timesteps: self.jump]
+
+        if self.sensor_type == 'random':
+            mask = generate_random_mask(Y.shape[1:], self.sensor_number)
+
+            # TODO: add noise
+
+            X = voronoi_tessellation(mask, Y)
+        elif self.sensor_type in ['real', 'real-random']:
+            X = self.X[idx: idx + self.timesteps: self.jump]
+            mask = self.mask[idx: idx + self.timesteps: self.jump]
+            mask = mask.reshape(X.shape[0] * X.shape[1], X.shape[2], X.shape[3])
+
+            self.get_count += 1
+
+            if self.should_reset_noise():
+                self.reset_noise()
+        else:
+            #  TODO: add noise
+            
+            X = self.X[idx: idx + self.timesteps: self.jump]
+            mask = self.mask
+
+        X = X.reshape(X.shape[0] * X.shape[1], X.shape[2], X.shape[3])
+
+        Y = Y[-1]
+
+        return X, Y, mask
+
+    def should_reset_noise(self) -> bool:
+        return self.get_count >= len(self) and self.noise != 'none' and self.sensor_type in ['real', 'real-random']
+
+    def reset_noise(self) -> None:
+        if self.noise == 'none':
+            return
+
+        self.get_count = 0
+
+        self.X, self.Y = generate_noisy_voronoi(
+            self.mask, self.Y,
+            noise_type=self.noise, full_noise=self.full_noise, noise_params=self.noise_params,
+            seed=self.seed
+        )
     
 def load_data(
     val_size: float = 0.1, 
@@ -345,7 +442,8 @@ def load_data(
     noise: str = 'none',
     full_noise: bool = False,
     noise_params: dict = None,
-    seed: int = 42
+    seed: int = 42,
+    diffusion: bool = False
 ) -> tuple[VCNNDataset, VCNNDataset, VCNNDataset, dict[str, np.ndarray]]:
     """
     Loads the dataset based on the specified parameters and returns train, validation, and test datasets along with scaling statistics.
@@ -360,6 +458,7 @@ def load_data(
         timesteps (int): Number of timesteps to consider for each sample.
         channel_timesteps (bool): Whether to use channel-wise timesteps.
         seed (int): Random seed for reproducibility.
+        diffusion (bool) : Whether to use for diffusion model or not
     Returns:
         tuple: A tuple containing:
             - train_dataset (VCNNDataset or VCLSTMDataset): The training dataset.
@@ -396,18 +495,35 @@ def load_data(
     Y_val = all_modalities_Y[val_indices]
     Y_train = all_modalities_Y[train_indices]
 
-    if scaling_type == "min-max":
-        stats = {
-            'Y_max': Y_train.max(axis=(0, 2, 3), keepdims=True),
-            'Y_min': Y_train.min(axis=(0, 2, 3), keepdims=True),
-        }
-    else:
-        stats = {
-            'Y_mean': Y_train.mean(axis=(0, 2, 3), keepdims=True),
-            'Y_std': Y_train.std(axis=(0, 2, 3), keepdims=True) + 1e-8,
-        }
+    stats = {
+        'Y_min': X_train.min(axis=(0, 2, 3), keepdims=True),
+        'Y_max': X_train.max(axis=(0, 2, 3), keepdims=True),
+        'Y_mean': Y_train.mean(axis=(0, 2, 3), keepdims=True),
+        'Y_std': Y_train.std(axis=(0, 2, 3), keepdims=True)*2,
+    }
 
-    if channel_timesteps:
+    if diffusion:
+        train_dataset = DiffusionDataset(
+            X_train, Y_train, mask, sensor_type, 
+            sensor_number, scaling_type, timesteps=timesteps, 
+            timesteps_jump=timesteps_jump, seed=seed,
+            noise=noise, full_noise=full_noise, noise_params=noise_params,
+            **stats)
+        
+        val_dataset = DiffusionDataset(
+            X_val, Y_val, mask, sensor_type, 
+            sensor_number, scaling_type, timesteps=timesteps, 
+            timesteps_jump=timesteps_jump, seed=seed,
+            noise="none",
+            **stats) if not combine_train_val else None
+        
+        test_dataset = DiffusionDataset(
+            X_test, Y_test, mask, sensor_type, 
+            sensor_number, scaling_type, timesteps=timesteps, 
+            timesteps_jump=timesteps_jump, seed=seed,
+            noise="none",
+            **stats)
+    elif channel_timesteps:
         train_dataset = VCNNDataset(
             X_train, Y_train, mask, sensor_type, 
             sensor_number, scaling_type, timesteps=timesteps, 

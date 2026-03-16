@@ -43,20 +43,20 @@ def main(
     """
 
     for timesteps in tested_timesteps:
-        experiment_name = f"t{timesteps}"
+        experiment_name = f"t{timesteps}_{seed}"
         best_params = torch.load(f"results/trained_models/{model_type}/params/t1_real.pth")
 
         if model_type == "vitae":
             vitae_main(
                 experiment_name=experiment_name,
                 model_type="unet",
-                sensor_type="real",
+                sensor_type="real-random",
                 sensor_number=30,
                 patch_size=(15, 10),
                 batch_size=64,
                 lr=best_params.get("lr", 1e-4),
                 weight_decay=best_params.get("weight_decay", 1e-5),
-                epochs=200,
+                epochs=300,
                 lamda1=best_params.get("lamda1", 0.01),
                 verbose=False,
                 seed=seed,
@@ -82,7 +82,7 @@ def main(
                 experiment_name=experiment_name,
                 model_type=training_model_type,
                 seed=seed,
-                sensor_type="real",
+                sensor_type="real-random",
                 sensor_number=30,
                 scaling_type="min-max",
                 timesteps=timesteps,
@@ -90,7 +90,7 @@ def main(
                 batch_size=batch_size,
                 lr=best_params.get("lr", 1e-4),
                 weight_decay=best_params.get("weight_decay", 1e-5),
-                epochs=200,
+                epochs=300,
                 verbose=False,
                 save_model=True,
                 early_stopping=True,

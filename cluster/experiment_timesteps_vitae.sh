@@ -9,4 +9,10 @@ export PATH=/vol/bitbucket/${USER}/master-thesis/.venv/bin/:$PATH
 
 source activate
 
-python -m experiments.timestep --model_type vitae --tested_timesteps 3 4 6
+python -m experiments.timestep --model_type vitae --tested_timesteps 2 8
+
+# --tested_timesteps 1 12 
+
+# --tested_timesteps 2 8
+
+# --tested_timesteps 3 4 6

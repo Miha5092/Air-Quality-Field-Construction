@@ -9,4 +9,4 @@ export PATH=/vol/bitbucket/${USER}/master-thesis/.venv/bin/:$PATH
 
 source activate
 
-python -m experiments.timestep --model_type vunet --tested_timesteps 12 
+python -m experiments.timestep --model_type vunet

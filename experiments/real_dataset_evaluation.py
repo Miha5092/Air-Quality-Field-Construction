@@ -3,6 +3,7 @@ import logging
 import torch
 
 from src.utils.evaluation import evaluate_on_real
+from src.utils.evaluation_pipeline import evaluate
 from src.usage.vcnn_training import main as voronoi_main
 from src.usage.vitae_training import main as vitae_main
 
@@ -53,12 +54,12 @@ def main(
                 evaluate_on_real(model=model, timesteps=timesteps)
 
         elif model_type == "vunet":
-            timesteps = 8  # VUnet performed the best on 8 timesteps
+            timesteps = 3  # VUnet performed the best on 3 timesteps
             best_params = torch.load(f"results/trained_models/{model_type}/params/t1_real.pth")
 
             model = voronoi_main(
                 experiment_name=experiment_name,
-                model_type="tiny",
+                model_type="unet",
                 seed=seed,
                 sensor_type="real-random",
                 sensor_number=30,
@@ -82,10 +83,11 @@ def main(
 
             model.eval()
             with torch.no_grad():
-                evaluate_on_real(model=model, timesteps=timesteps, experiment_name=experiment_name)
+                # evaluate_on_real(model=model, timesteps=timesteps, experiment_name=experiment_name)
+                evaluate(model=model, timesteps=timesteps, experiment_name=experiment_name, data_scaling_type="min-max")
 
         elif model_type == "vitae":
-            timesteps = 8  # ViTAE performed the best on 8 timesteps
+            timesteps = 6  # ViTAE performed the best on 6 timesteps
             best_params = torch.load(f"results/trained_models/{model_type}/params/t1_real.pth")
 
             model = vitae_main(
@@ -114,7 +116,8 @@ def main(
             model.eval()
 
             with torch.no_grad():
-                evaluate_on_real(model=model, timesteps=timesteps, experiment_name=experiment_name)
+                # evaluate_on_real(model=model, timesteps=timesteps, experiment_name=experiment_name)
+                evaluate(model=model, timesteps=timesteps, experiment_name=experiment_name, data_scaling_type="min-max")
 
         elif model_type == "clstm":
             timesteps = 8  # ConvLSTM performed the best on 8 timesteps
@@ -147,7 +150,8 @@ def main(
             model.eval()
 
             with torch.no_grad():
-                evaluate_on_real(model=model, timesteps=timesteps, experiment_name=experiment_name)
+                # evaluate_on_real(model=model, timesteps=timesteps, experiment_name=experiment_name)
+                evaluate(model=model, timesteps=timesteps, experiment_name=experiment_name, data_scaling_type="min-max")
 
         else:
             raise ValueError(f"Model type {model_type} is not recognized. Choose from 'vcnn', 'vunet', 'vitae', or 'clstm'.")

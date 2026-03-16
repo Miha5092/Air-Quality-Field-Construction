@@ -271,16 +271,12 @@ def load_data(
     mask = obtain_mask(X_train, sensor_type, sensor_number, seed)
 
     # Compute dataset statistics for standardization
-    if scaling_type in ['min-max', 'none']:
-        stats = {
-            'data_min': X_train.min(axis=(0, 2, 3), keepdims=True),
-            'data_max': X_train.max(axis=(0, 2, 3), keepdims=True),
-        }
-    else:
-        stats = {
-            'data_mean': X_train.mean(axis=(0, 2, 3), keepdims=True),
-            'data_std': X_train.std(axis=(0, 2, 3), keepdims=True),
-        }
+    stats = {
+        'data_min': X_train.min(axis=(0, 2, 3), keepdims=True),
+        'data_max': X_train.max(axis=(0, 2, 3), keepdims=True),
+        'data_mean': X_train.mean(axis=(0, 2, 3), keepdims=True),
+        'data_std': X_train.std(axis=(0, 2, 3), keepdims=True),
+    }
 
     train_dataset = VitaeDataset(
         X_train, mask, sensor_type, sensor_number, 

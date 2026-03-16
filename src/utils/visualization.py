@@ -8,6 +8,7 @@ import seaborn as sns
 import pandas as pd
 import matplotlib.patches as mpatches
 from PIL import Image
+from matplotlib.legend_handler import HandlerTuple
 
 from IPython.display import HTML
 from matplotlib.ticker import FormatStrFormatter
@@ -16,10 +17,32 @@ from scipy.ndimage import uniform_filter1d
 from matplotlib.colors import ListedColormap
 from matplotlib.patches import Patch, Rectangle
 
-from src.utils.evaluation import compute_relative_error, compute_local_relative_error
+from src.utils.evaluation import compute_relative_error, compute_local_relative_error, compute_local_error
 from src.datasets.utils import get_custom_noise, read_real_observation_files
 from src.datasets.real_obs_dataset import load_data as load_real_obs_data
 from src.datasets.vitae_dataset import load_data as load_vitae_data
+
+background_paris = np.load("data/map_rgb_adjusted.npy")
+
+def print_with_borders(img: np.array, ax, vmax: int, cmap: str):
+    img_rgb = background_paris.astype(np.uint8)
+    mask_lines = (img_rgb < 250).any(axis=2)
+    img_rgb[mask_lines] = [255, 255, 255]
+    alpha = (mask_lines * 255 * 0.5).astype(np.uint8)
+    paris_rgba = np.dstack([img_rgb, alpha])
+
+    im = ax.imshow(
+        np.flipud(img), vmin=0, vmax=vmax, 
+        cmap=cmap,
+        extent=[0, 110, 0, 75])
+    ax.imshow(
+        paris_rgba,
+        origin="upper",          
+        extent=[0, 110, 0, 75],
+        zorder=10                
+    )
+
+    return im
 
 def _add_aligned_colorbar(im, ax, pad=0.05, size="5%", fontsize=14):
     divider = make_axes_locatable(ax)
@@ -45,10 +68,13 @@ def animate_predictions(predictions: np.ndarray, num_frames: int, save_dir: str=
 
     fig, axs = plt.subplots(1, 4, figsize=(22, 4))
 
+    # fig, axs = plt.subplots(2, 2, figsize=(11, 8))
+    # axs = axs.flatten()
+
     pred_images = []
 
     for i, pollutant in enumerate(pollutants):
-        im_pred = axs[i].imshow(predictions[0, i], animated=True, cmap='viridis', vmin=v_mins[i], vmax=v_maxs[i])
+        im_pred = axs[i].imshow(predictions[0, i], animated=True, cmap='viridis', vmin=0)
         axs[i].set_title(f"{pollutant} Prediction")
         pred_images.append(im_pred)
         _add_aligned_colorbar(im_pred, axs[i])
@@ -779,33 +805,46 @@ def plot_model_prediction_comparison(
     pollutant_idx = pollutants_idx[pollutant]
     n_models = len(all_results)
 
-    v_max = np.max([max(np.max(res['ground_truth'][sample_idx, pollutant_idx]), np.max(res['predictions'][sample_idx, pollutant_idx])) for res in all_results.values()])
+    v_max = np.max([max(np.max(res['simulated_ground_truths'][sample_idx, pollutant_idx]), np.max(res['simulated_predictions'][sample_idx, pollutant_idx])) for res in all_results.values()])
 
     if show_errors:
-        v_max_errors = max([np.max(np.abs(res['local_errors'][sample_idx, pollutant_idx])) for res in all_results.values()])
+        try:
+            v_max_errors = max([np.max(np.abs(res['real_local_errors'][sample_idx, pollutant_idx])) for res in all_results.values()])
+        except:
+            v_max_errors = max([
+                np.max(np.abs(compute_local_error(torch.from_numpy(res['simulated_ground_truths'][sample_idx, pollutant_idx]), torch.from_numpy(res['simulated_predictions'][sample_idx, pollutant_idx])).numpy())) 
+                for res in all_results.values()
+                ])
 
     for i, (model_name, results) in enumerate(all_results.items()):
-        gt_img = results['ground_truth'][sample_idx, pollutant_idx]
-        pred_img = results['predictions'][sample_idx, pollutant_idx]
+        gt_img = results['simulated_ground_truths'][sample_idx, pollutant_idx]
+        pred_img = results['simulated_predictions'][sample_idx, pollutant_idx]
+
         if show_errors:
-            err_img = np.abs(results['local_errors'][sample_idx, pollutant_idx])
+            try:
+                err_img = np.abs(results['real_local_errors'][sample_idx, pollutant_idx])
+            except:
+                err_img = np.abs(
+                    compute_local_error(
+                        torch.from_numpy(gt_img),
+                        torch.from_numpy(pred_img)
+                    ).numpy()
+                )
 
         if save_dir is not None:
             # Save each subfigure individually
             plot_info = [
-                ("ground_truth", gt_img, "viridis", v_max),
-                ("prediction", pred_img, "viridis", v_max),
+                ("ground_truth", gt_img, "viridis", 0, v_max),
+                ("prediction", pred_img, "viridis", 0, v_max),
             ]
-
             if show_errors:
-                plot_info.append(("error", err_img, "jet", v_max_errors))
-
-            for name, img, cmap, vmax in plot_info:
+                plot_info.append(("error", err_img, "jet", 0, v_max_errors))
+            for name, img, cmap, vmin, vmax in plot_info:
                 fig, ax = plt.subplots(figsize=(5, 5))
-                im = ax.imshow(img, vmin=0, vmax=vmax, cmap=cmap)
+                # im = ax.imshow(img, vmin=vmin, vmax=vmax, cmap=cmap)
+                im = print_with_borders(img, ax, vmax, cmap)
                 ax.axis('off')
                 _add_aligned_colorbar(im, ax, pad=0.05)
-
                 filename = f"{pollutant}_{model_name}_{name}.png"
                 fig.savefig(os.path.join(save_dir, filename), dpi=300, bbox_inches='tight')
                 plt.close(fig)
@@ -814,17 +853,14 @@ def plot_model_prediction_comparison(
             if i == 0:
                 n_rows = 3 if show_errors else 2
                 fig, ax = plt.subplots(n_rows, n_models, figsize=(n_models * 5, 10))
-
             im0 = ax[0][i].imshow(gt_img, vmin=0, vmax=v_max)
             ax[0][i].set_title("Ground Truth", fontsize=16)
             ax[0][i].axis('off')
             _add_aligned_colorbar(im0, ax[0][i], pad=0.05)
-
             im1 = ax[1][i].imshow(pred_img, vmin=0, vmax=v_max)
             ax[1][i].set_title(f"Prediction ({model_name})", fontsize=16)
             ax[1][i].axis('off')
             _add_aligned_colorbar(im1, ax[1][i], pad=0.05)
-
             if show_errors:
                 im2 = ax[2][i].imshow(err_img, vmin=0, vmax=v_max_errors, cmap='jet')
                 ax[2][i].set_title("Absolute Errors", fontsize=16)
@@ -864,11 +900,11 @@ def plot_distribution_comparison(save_dir: str | None = None) -> None:
 
         fig, ax = plt.subplots(figsize=(6, 5))
 
-        ax.hist(real_obs_values, bins=bins, alpha=0.5, label="Real-World Observations", density=True)
-        ax.hist(train_obs_values, bins=bins, alpha=0.5, label="Synthethic Observations", density=True)
+        ax.hist(real_obs_values, bins=bins, alpha=0.5, label="Real-World", density=True)
+        ax.hist(train_obs_values, bins=bins, alpha=0.5, label="Synthethic", density=True)
 
-        ax.set_xlabel(f"{pollutant} Concentration Levels", fontsize=16, labelpad=10)
-        ax.set_ylabel("Frequency", fontsize=16, labelpad=10)
+        # ax.set_xlabel(f"{pollutant} Concentration Levels", fontsize=16, labelpad=10)
+        # ax.set_ylabel("Frequency", fontsize=16, labelpad=10)
 
         ax.tick_params(axis='both', which='major', labelsize=16)
 
@@ -937,12 +973,12 @@ def plot_noise_effects(
             bins=50
         )
 
-        ax.hist(clean_values, bins=bins, alpha=0.5, label="Real-World Observations", density=True)
-        ax.hist(noised_values, bins=bins, alpha=0.5, label="Synthethic Observations", density=True)
+        ax.hist(clean_values, bins=bins, alpha=0.5, label="Real-World", density=True)
+        ax.hist(noised_values, bins=bins, alpha=0.5, label="Synthethic", density=True)
 
         if save_dir is None: ax.set_title(f"{pollutant} Distribution")
-        ax.set_xlabel(f"{pollutant} Concentration Levels", fontsize=16, labelpad=10)
-        ax.set_ylabel("Frequency", fontsize=16, labelpad=10)
+        # ax.set_xlabel(f"{pollutant} Concentration Levels", fontsize=16, labelpad=10)
+        # ax.set_ylabel("Frequency", fontsize=16, labelpad=10)
 
         ax.tick_params(axis='both', which='major', labelsize=16)
         ax.legend(fontsize=16)
@@ -1845,34 +1881,45 @@ def plot_noise_experiment_results():
         file_name=f"{save_dir}/errors_bar_vitae.png"
         )
 
+from matplotlib.patches import Patch
+
 def plot_experiment_barcharts(
     df: pd.DataFrame, 
-    figsize=(10, 6), capsize=4, annot_size: int = 12,
+    figsize=(10, 6), capsize=4, 
+    annot_size: int = 12, ylim: tuple[float, float] = (0, 0.5),
+    y_axis_name: str = "Mean L2 MRE (mean ± std over seeds)",
     file_name: str = None
 ) -> None:
-    
 
     palette_names = {
-            "CLSTM": "#5F8A5F",
-            "VUNet": "#6495ED",
-            "ViTAE": "#CD853F",
-            "Kriging": "#808080",
-            "VCNN": "#9370DB",
-        }
+        "CLSTM": "#5F8A5F",
+        "VUNet": "#6495ED",
+        "ViTAE": "#CD853F",
+        "Kriging": "#808080",
+        "Diffusion": "#7A42EB",
+    }
 
     agg = (
         df.groupby(["Experiment Name", "Model"], as_index=False)
-          .agg(mean_error=("Error", "mean"),
-               std_error=("Error", "std"),
-               n=("Seed", "nunique"))
+          .agg(
+              mean_error=("Error", "mean"),
+              std_error=("Error", "std"),
+              n=("Seed", "nunique"),
+          )
     )
 
-    exp_avg_error = agg.groupby("Experiment Name")["mean_error"].mean().sort_values()
+    exp_avg_error = (
+        agg.groupby("Experiment Name")["mean_error"]
+           .mean()
+           .sort_values()
+    )
     experiments = exp_avg_error.index.tolist()
     models_in_data = agg["Model"].unique().tolist()
 
-    ordered_models = [m for m in palette_names if m in models_in_data] + \
-                     [m for m in models_in_data if m not in palette_names]
+    ordered_models = (
+        [m for m in palette_names if m in models_in_data] +
+        [m for m in models_in_data if m not in palette_names]
+    )
 
     model_colors = {}
     fallback_colors = ["#BC8F8F", "#20B2AA", "#F0E68C", "#CD5C5C", "#90EE90"]
@@ -1886,12 +1933,20 @@ def plot_experiment_barcharts(
             fallback_idx += 1
 
     x = np.arange(len(experiments))
-    M = len(ordered_models)
+
+    # Identify "No noise" experiments
+    no_noise_mask = np.array([
+        (" - " not in exp_name) for exp_name in experiments
+    ])
 
     fig, ax = plt.subplots(figsize=figsize)
 
-    for i, m in enumerate(ordered_models):
-        m_df = agg[agg["Model"] == m].set_index("Experiment Name").reindex(experiments)
+    for m in ordered_models:
+        m_df = (
+            agg[agg["Model"] == m]
+            .set_index("Experiment Name")
+            .reindex(experiments)
+        )
 
         means = m_df["mean_error"].values
         stds = m_df["std_error"].values
@@ -1910,51 +1965,116 @@ def plot_experiment_barcharts(
             model_bar_means,
             yerr=model_bar_stds,
             width=0.9,
-            label=m,
             color=model_colors[m],
             edgecolor="black",
             linewidth=0.4,
             capsize=capsize,
         )
 
-        for bar, mean, std in zip(bars.patches, model_bar_means, model_bar_stds):
-            
-            if not np.isnan(std): 
-                text = f"{mean:.3f}\n±{std:.3f}"
-            else: 
-                text = f"{mean:.3f}"
-            
-            plt.annotate(
+        for bar, mean, std, x_idx in zip(
+            bars.patches,
+            model_bar_means,
+            model_bar_stds,
+            model_bar_coord,
+        ):
+            if no_noise_mask[x_idx]:
+                bar.set_hatch("//")
+                bar.set_linewidth(0.6)
+
+            if not np.isnan(std):
+                text = f"{mean:.2f}\n±{std:.2f}"
+            else:
+                text = f"{mean:.2f}"
+
+            ax.annotate(
                 text,
-                (bar.get_x() + bar.get_width() / 2., bar.get_height() + 0.01),
-                ha="center", va="bottom", fontsize=annot_size, color="black",
-                xytext=(0, 5), textcoords="offset points"
+                (bar.get_x() + bar.get_width() / 2.0,
+                 bar.get_height() + 0.01),
+                ha="center",
+                va="bottom",
+                fontsize=annot_size,
+                color="black",
+                xytext=(0, 5),
+                textcoords="offset points",
             )
 
     ax.set_xlabel("Noising Method", fontsize=14, labelpad=10)
-    ax.set_ylabel("Mean L2 MRE (mean ± std over seeds)", fontsize=14, labelpad=10)
+    ax.set_ylabel(y_axis_name, fontsize=14, labelpad=10)
 
-    noising_methods = [exp_name.split(" - ")[-1] if " - " in exp_name else "No noise" for exp_name in experiments]
+    noising_methods = [
+        exp_name.split(" - ")[-1] if " - " in exp_name else "No noise"
+        for exp_name in experiments
+    ]
     ax.set_xticks(x)
     ax.set_xticklabels(noising_methods, rotation=30, ha="right", fontsize=12)
-    ax.tick_params(axis='y', labelsize=12)
+    ax.tick_params(axis="y", labelsize=12)
 
-    ax.set_ylim(0, 0.5)
-
-    ax.legend(title="Model", frameon=False, fontsize=12, title_fontsize=13)
-
+    ax.set_ylim(ylim)
     ax.margins(x=0.02)
-
     ax.grid(axis="y", linestyle=":", alpha=0.6)
+
+    # --- CLEAN LEGEND (no hatch, always solid) ---
+    legend_handles = [
+        Patch(
+            facecolor=model_colors[m],
+            edgecolor="black",
+            linewidth=0.6,
+            label=m,
+        )
+        for m in ordered_models
+    ]
+
+    # --- Legend 1: Model architecture ---
+    legend_models = ax.legend(
+        handles=legend_handles,
+        title="Model Architecture",
+        frameon=False,
+        fontsize=12,
+        title_fontsize=13,
+        ncol=len(ordered_models),
+        loc="upper center",
+        bbox_to_anchor=(0.5, 1.0),
+    )
+
+    ax.add_artist(legend_models)  # IMPORTANT: keep first legend
+
+    # --- Legend 2: Noise vs No-noise ---
+    noise_legend_handles = [
+        Patch(
+            facecolor="white",
+            edgecolor="black",
+            linewidth=0.6,
+            label="With noise augmentation",
+        ),
+        Patch(
+            facecolor="white",
+            edgecolor="black",
+            hatch="//",
+            linewidth=0.6,
+            label="No noise",
+        ),
+    ]
+
+    ax.legend(
+        handles=noise_legend_handles,
+        title="Noise Setting",
+        frameon=False,
+        fontsize=11,
+        title_fontsize=12,
+        ncol=2,
+        loc="upper center",
+        bbox_to_anchor=(0.5, 0.85),
+    )
 
     fig.tight_layout()
 
     if file_name is not None:
         plt.savefig(file_name, dpi=300, bbox_inches="tight")
-    
+
     plt.show()
     plt.close()
     reset_theme()
+
 
 def plot_real_timewise_error(
     experiment_results: dict[str, np.ndarray],
@@ -2183,6 +2303,12 @@ def plot_joint_results_comparison():
     os.makedirs("report_images/experiments/fine_tuned/error_bars", exist_ok=True)
 
     plot_joint_results_comparison_helper(
+        df,
+        figsize=(10, 6), capsize=4, annot_size=11, 
+        file_name="test.png"
+    )
+
+    plot_joint_results_comparison_helper(
         df[df['Architecture'].isin(["CLSTM", "Kriging"])],
         figsize=(5, 5), capsize=4, annot_size=13, 
         file_name="report_images/experiments/fine_tuned/error_bars/clstm.png"
@@ -2199,3 +2325,310 @@ def plot_joint_results_comparison():
         figsize=(5, 5), capsize=4, annot_size=13, 
         file_name="report_images/experiments/fine_tuned/error_bars/vitae.png"
     )
+
+
+def plot_grouped_paper_real_results(results: pd.DataFrame, save: bool = True):
+
+    import numpy as np
+    import matplotlib.pyplot as plt
+    from matplotlib.patches import Patch
+    from matplotlib.legend_handler import HandlerTuple
+
+    palette_names = {
+        "CLSTM": "Greens",
+        "VUNet": "Blues",
+        "ViTAE": "Oranges",
+        "Kriging": "Greys",
+        "Diffusion": "Purples",
+    }
+
+    # NEW: shrink entire group width symmetrically
+    group_width_scale = {
+        "Kriging": 0.55,   # thinner baseline group
+    }
+
+    categories = sorted(results["Model"].unique())
+    x_centers = np.arange(len(categories))
+
+    plt.figure(figsize=(16, 7))
+
+    ribbon_handles = []
+    ribbon_labels = []
+
+    xtick_positions = []
+    xtick_labels = []
+
+    for cat_idx, category in enumerate(categories):
+        cat_df = results[results["Model"] == category]
+        cat_methods = sorted(cat_df["Noising Method"].unique())
+        k = len(cat_methods)
+        if k == 0:
+            continue
+
+        # --- GROUP GEOMETRY (FIXED) ---
+        base_total_width = 0.8
+        group_scale = group_width_scale.get(category, 1.0)
+        total_width = base_total_width * group_scale
+
+        bar_width = total_width / k
+        offsets = (np.arange(k) - (k - 1) / 2.0) * bar_width
+
+        cmap = plt.cm.get_cmap(palette_names.get(category, "Greys"))
+        shades = (
+            [0.65] if k == 1 else
+            [0.45, 0.75] if k == 2 else
+            np.linspace(0.35, 0.85, k)
+        )
+
+        for i, (method, shade) in enumerate(zip(cat_methods, shades)):
+            sub = cat_df[cat_df["Noising Method"] == method]["Error"]
+            mean = float(np.nanmean(sub)) if len(sub) else 0.0
+            std = float(np.nanstd(sub)) if len(sub) else 0.0
+
+            x = x_centers[cat_idx] + offsets[i]
+
+            bars = plt.bar(
+                x,
+                mean,
+                bar_width,
+                color=cmap(shade),
+                yerr=(std if (std and not np.isnan(std)) else None),
+                capsize=3,
+                alpha=0.8,
+                edgecolor="black",
+                linewidth=0.5
+            )
+
+            if mean != 0.0:
+                plt.text(
+                    x,
+                    mean + 0.02,
+                    f"{mean:.3f}" + (f"\n±{std:.3f}" if std else ""),
+                    ha="center",
+                    va="bottom",
+                    fontsize=15,
+                    rotation=45,
+                    
+                )
+
+            xtick_positions.append(x)
+            xtick_labels.append(method)
+
+        # --- Ribbon legend entry ---
+        patches = tuple(
+            Patch(
+                facecolor=cmap(shade),
+                edgecolor="black",
+                linewidth=0.5
+            )
+            for shade in shades
+        )
+
+        ribbon_handles.append(patches)
+        ribbon_labels.append(category)
+
+    plt.xticks(
+        xtick_positions,
+        xtick_labels,
+        rotation=45,
+        ha="right",
+        fontsize=15
+    )
+
+    plt.xlabel("Noising Methods (grouped by Architecture)", fontsize=17, labelpad=25)
+    plt.ylabel("Global Relative Error", fontsize=17)
+
+    plt.tick_params(axis="y", labelsize=15)
+    plt.grid(axis="y", linestyle=":", alpha=0.6)
+    plt.ylim(0, 0.6)
+
+    ax = plt.gca()
+    model_legend = ax.legend(
+        ribbon_handles,
+        ribbon_labels,
+        title="Model Architecture",
+        handler_map={tuple: HandlerTuple(ndivide=None)},
+        loc="upper center",
+        bbox_to_anchor=(0.5, 0.995),
+        frameon=False,
+        fontsize=16,
+        title_fontsize=19,
+        handlelength=4.2,
+        handletextpad=1.8,
+        columnspacing=3.0,
+        ncol=len(ribbon_labels),
+    )
+
+    ax.add_artist(model_legend)
+
+    plt.tight_layout()
+    if save:
+        plt.savefig("paper_images/grouped_comparison.png", dpi=300, bbox_inches="tight")
+    plt.show()
+    plt.close()
+    reset_theme()
+
+# I would like you to help me implement a plotting function. The main idea behind the data that I have is the following:
+
+
+
+# The "all_results" dict links a model's name to a dictionary containing evaluation data. I have already extracted the ground truth data and the model's predictions for you. You don't need to think about anything else.
+
+
+
+# The gt_image and pred_image numpy arrays have 3 dimensions, representing (time, width, height). Another feature of the data is that the gt_image array has a lot of 0 values. That's missing data that the model is supposed to predict.  However, in this function, we are going to use the ground truth data that we have to evaluate the model.
+
+
+
+# Thus, I would like this function to generate a plot  where the x axis is the gt value and the y axis is the predicted value. Ignore values pixels where gt is 0.
+
+
+
+# def plot_gt_vs_pred(
+#     all_results: dict[str, dict[str, np.ndarray]],
+#     save_dir: str,
+#     pollutant: str,
+# ) -> None:
+#     pollutants_idx = {
+#         "o3": 0,
+#         "pm10": 1,
+#         "pm25": 2,
+#         "no2": 3
+#     }
+#     pollutant_idx = pollutants_idx[pollutant]
+#     n_models = len(all_results)
+
+#     for i, (model_name, results) in enumerate(all_results.items()):
+#         gt_img = results['simulated_ground_truths'][:, pollutant_idx]
+#         pred_img = results['simulated_predictions'][:, pollutant_idx]
+
+#         print(gt_img.shape, pred_img.shape)
+
+def plot_gt_vs_pred(
+    all_results: dict[str, dict[str, np.ndarray]],
+    save_dir: str,
+    pollutant: str,
+    gt_column: str = 'real_ground_truths',
+    pred_column: str = 'real_predictions',
+) -> None:
+    from scipy import stats
+    
+    # Set seaborn style
+    sns.set_style("whitegrid")
+    sns.set_context("notebook")
+    
+    pollutants_idx = {
+        "o3": 0,
+        "pm10": 1,
+        "pm25": 2,
+        "no2": 3
+    }
+    pollutant_idx = pollutants_idx[pollutant]
+    
+    # Create output directory if it doesn't exist
+    os.makedirs(save_dir, exist_ok=True)
+    
+    for model_name, results in all_results.items():
+        if model_name == "Kriging":
+            print("FIX KRIGING")
+            continue
+
+        gt_img = results[gt_column][:, pollutant_idx]
+        pred_img = results[pred_column][:, pollutant_idx]
+        pred_mask = results["real_target_masks"][:, [pollutant_idx]]
+        
+        # Get the shape to reconstruct spatial coordinates
+        time_steps, height, width = gt_img.shape
+        
+        # Create coordinate arrays
+        # Shape will be (time, height, width)
+        y_coords, x_coords = np.meshgrid(np.arange(height), np.arange(width), indexing='ij')
+        
+        # Broadcast to match time dimension
+        x_coords_full = np.broadcast_to(x_coords[np.newaxis, :, :], (time_steps, height, width))
+        y_coords_full = np.broadcast_to(y_coords[np.newaxis, :, :], (time_steps, height, width))
+        
+        # Flatten the arrays
+        pred_mask_flat = pred_mask.flatten()
+        gt_flat = gt_img.flatten()
+        pred_flat = pred_img.flatten()
+        x_flat = x_coords_full.flatten()
+        y_flat = y_coords_full.flatten()
+
+        if pred_mask_flat.shape[0] > gt_flat.shape[0]:
+            pred_mask_flat = pred_mask_flat[:gt_flat.shape[0]]
+
+        gt_flat = gt_flat[:pred_mask_flat.shape[0]]
+        pred_flat = pred_flat[:pred_mask_flat.shape[0]]
+        x_flat = x_flat[:pred_mask_flat.shape[0]]
+        y_flat = y_flat[:pred_mask_flat.shape[0]]
+        
+        # Filter out pixels where ground truth is close to 0 (missing data)
+        mask = gt_flat > 1e-6
+        mask = pred_mask_flat > 1e-6
+        gt_valid = gt_flat[mask]
+        pred_valid = pred_flat[mask]
+        x_valid = x_flat[mask]
+        y_valid = y_flat[mask]
+        
+        # Classify as inner city or outer city
+        # Inner city: x between 45 and 65, y between 30 and 45
+        inner_city_mask = (x_valid >= 45) & (x_valid <= 65) & (y_valid >= 30) & (y_valid <= 45)
+        
+        # Create figure
+        _, ax = plt.subplots(figsize=(5, 5))
+        
+        # Plot outer city points
+        outer_mask = ~inner_city_mask
+        if np.any(outer_mask):
+            ax.scatter(gt_valid[outer_mask], pred_valid[outer_mask], 
+                      alpha=0.5, s=18, color='coral', edgecolor='none',
+                      label='Outer city')
+        
+        # Plot inner city points
+        if np.any(inner_city_mask):
+            ax.scatter(gt_valid[inner_city_mask], pred_valid[inner_city_mask], 
+                      alpha=0.5, s=18, color='steelblue', edgecolor='none',
+                      label='Inner city')
+        
+        # Add diagonal line (perfect prediction)
+        min_val = min(gt_valid.min(), pred_valid.min())
+        max_val = max(gt_valid.max(), pred_valid.max()) * 1.05
+        ax.plot([min_val, max_val], [min_val, max_val], 'r--', 
+               linewidth=2, label='Perfect prediction', zorder=5, alpha=0.7)
+        
+        # Labels and title
+        ax.set_xlabel('Ground Truth', fontsize=16)
+        ax.set_ylabel('Predicted', fontsize=16)
+        ax.legend(fontsize=12, loc='upper left')
+
+        if pollutant == "pm10" or pollutant == "pm25" or pollutant == "o3":
+            ax.set_xlim(-5, 80)
+            ax.set_ylim(-5, 80)
+        elif pollutant == "no2":
+            ax.set_xlim(-5, 90)
+            ax.set_ylim(-5, 90)
+        
+        # Add r-value text below the legend
+        # Calculate Pearson correlation coefficient
+        r_value, p_value = stats.pearsonr(gt_valid, pred_valid)
+
+        ax.text(0.04, 0.75, f'r = {r_value:.3f}', 
+                transform=ax.transAxes, fontsize=14,
+                verticalalignment='top', horizontalalignment='left',
+                bbox=dict(boxstyle='round', facecolor='white', alpha=0.8, edgecolor='gray'))
+        
+        # Make axes equal for better comparison
+        ax.set_aspect('equal', adjustable='box')
+        
+        plt.tight_layout()
+        
+        # Save the figure
+        safe_model_name = model_name.replace('/', '_').replace(' ', '_')
+        
+        save_path = os.path.join(save_dir, f'{safe_model_name}.png')
+        plt.savefig(save_path, dpi=150, bbox_inches='tight')
+        
+        plt.close()
+
+    reset_theme()

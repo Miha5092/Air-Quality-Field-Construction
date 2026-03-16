@@ -9,4 +9,4 @@ export PATH=/vol/bitbucket/${USER}/master-thesis/.venv/bin/:$PATH
 
 source activate
 
-srun python -m experiments.real_dataset_evaluation --model_types vitae --epochs 2 --experiment_name test --noise gaussian --full_noise
+srun python -m experiments.timestep --model_type vunet --tested_timesteps 1
