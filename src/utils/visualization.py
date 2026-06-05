@@ -7,6 +7,8 @@ import torch
 import seaborn as sns
 import pandas as pd
 import matplotlib.patches as mpatches
+from matplotlib.patches import Ellipse
+import matplotlib.transforms as transforms
 from PIL import Image
 from matplotlib.legend_handler import HandlerTuple
 
@@ -908,7 +910,7 @@ def plot_distribution_comparison(save_dir: str | None = None) -> None:
 
         ax.tick_params(axis='both', which='major', labelsize=16)
 
-        ax.legend(fontsize=16)
+        ax.legend(fontsize=24)
 
         plt.tight_layout()
 
@@ -981,7 +983,7 @@ def plot_noise_effects(
         # ax.set_ylabel("Frequency", fontsize=16, labelpad=10)
 
         ax.tick_params(axis='both', which='major', labelsize=16)
-        ax.legend(fontsize=16)
+        ax.legend(fontsize=24)
 
         if save_dir is not None:
             os.makedirs(save_dir, exist_ok=True)
@@ -2468,41 +2470,40 @@ def plot_grouped_paper_real_results(results: pd.DataFrame, save: bool = True):
     plt.close()
     reset_theme()
 
-# I would like you to help me implement a plotting function. The main idea behind the data that I have is the following:
 
+def draw_ellipse(gt_valid, pred_valid, ax, model_name):
+        
+    # Add confidence ellipse
+        cov = np.cov(gt_valid, pred_valid)
+        mean_x = np.mean(gt_valid)
+        mean_y = np.mean(pred_valid)
+        if model_name == 'Kriging':
+            edgec = 'green'
+        else:
+            edgec = 'blue'
 
+        # Ellipse radii
+        eigvals, eigvecs = np.linalg.eigh(cov)
+        # Sort eigenvalues (largest first)
+        order = eigvals.argsort()[::-1]
+        eigvals = eigvals[order]
+        eigvecs = eigvecs[:, order]
 
-# The "all_results" dict links a model's name to a dictionary containing evaluation data. I have already extracted the ground truth data and the model's predictions for you. You don't need to think about anything else.
+        # Angle of ellipse
+        angle = np.degrees(np.arctan2(*eigvecs[:, 0][::-1]))
 
+        width, height = 2 * 2 * np.sqrt(eigvals)
 
-
-# The gt_image and pred_image numpy arrays have 3 dimensions, representing (time, width, height). Another feature of the data is that the gt_image array has a lot of 0 values. That's missing data that the model is supposed to predict.  However, in this function, we are going to use the ground truth data that we have to evaluate the model.
-
-
-
-# Thus, I would like this function to generate a plot  where the x axis is the gt value and the y axis is the predicted value. Ignore values pixels where gt is 0.
-
-
-
-# def plot_gt_vs_pred(
-#     all_results: dict[str, dict[str, np.ndarray]],
-#     save_dir: str,
-#     pollutant: str,
-# ) -> None:
-#     pollutants_idx = {
-#         "o3": 0,
-#         "pm10": 1,
-#         "pm25": 2,
-#         "no2": 3
-#     }
-#     pollutant_idx = pollutants_idx[pollutant]
-#     n_models = len(all_results)
-
-#     for i, (model_name, results) in enumerate(all_results.items()):
-#         gt_img = results['simulated_ground_truths'][:, pollutant_idx]
-#         pred_img = results['simulated_predictions'][:, pollutant_idx]
-
-#         print(gt_img.shape, pred_img.shape)
+        ellipse = Ellipse((mean_x, mean_y),
+                      width=width,
+                      height=height,
+                      angle=angle,
+                      facecolor='none',
+                      edgecolor=edgec,
+                      alpha=0.8,
+                      label = 'confidence ellipse '+ model_name)
+        
+        return ax.add_patch(ellipse)
 
 def plot_gt_vs_pred(
     all_results: dict[str, dict[str, np.ndarray]],
@@ -2523,15 +2524,18 @@ def plot_gt_vs_pred(
         "pm25": 2,
         "no2": 3
     }
+    title_dict = {
+        "o3": "O3",
+        "pm10": "PM10",
+        "pm25": "PM2.5",
+        "no2": "NO2"
+    }
     pollutant_idx = pollutants_idx[pollutant]
     
     # Create output directory if it doesn't exist
     os.makedirs(save_dir, exist_ok=True)
     
     for model_name, results in all_results.items():
-        if model_name == "Kriging":
-            print("FIX KRIGING")
-            continue
 
         gt_img = results[gt_column][:, pollutant_idx]
         pred_img = results[pred_column][:, pollutant_idx]
@@ -2582,25 +2586,25 @@ def plot_gt_vs_pred(
         outer_mask = ~inner_city_mask
         if np.any(outer_mask):
             ax.scatter(gt_valid[outer_mask], pred_valid[outer_mask], 
-                      alpha=0.5, s=18, color='coral', edgecolor='none',
-                      label='Outer city')
+                    alpha=0.5, s=18, color='coral', edgecolor='none',
+                    label='Outer city')
         
         # Plot inner city points
         if np.any(inner_city_mask):
             ax.scatter(gt_valid[inner_city_mask], pred_valid[inner_city_mask], 
-                      alpha=0.5, s=18, color='steelblue', edgecolor='none',
-                      label='Inner city')
+                    alpha=0.5, s=18, color='steelblue', edgecolor='none',
+                    label='Inner city')
         
         # Add diagonal line (perfect prediction)
         min_val = min(gt_valid.min(), pred_valid.min())
         max_val = max(gt_valid.max(), pred_valid.max()) * 1.05
         ax.plot([min_val, max_val], [min_val, max_val], 'r--', 
-               linewidth=2, label='Perfect prediction', zorder=5, alpha=0.7)
+                linewidth=2, label='Perfect prediction', zorder=5, alpha=0.7)
         
         # Labels and title
-        ax.set_xlabel('Ground Truth', fontsize=16)
-        ax.set_ylabel('Predicted', fontsize=16)
-        ax.legend(fontsize=12, loc='upper left')
+        ax.set_xlabel('Reference '+ title_dict[pollutant], fontsize=20)
+        ax.set_ylabel('Predicted', fontsize=20)
+        #ax.legend(fontsize=16, loc='upper left')
 
         if pollutant == "pm10" or pollutant == "pm25" or pollutant == "o3":
             ax.set_xlim(-5, 80)
@@ -2613,16 +2617,142 @@ def plot_gt_vs_pred(
         # Calculate Pearson correlation coefficient
         r_value, p_value = stats.pearsonr(gt_valid, pred_valid)
 
-        ax.text(0.04, 0.75, f'r = {r_value:.3f}', 
-                transform=ax.transAxes, fontsize=14,
-                verticalalignment='top', horizontalalignment='left',
-                bbox=dict(boxstyle='round', facecolor='white', alpha=0.8, edgecolor='gray'))
+        #ax.text(0.04, 0.75, f'r = {r_value:.3f}', 
+        #        transform=ax.transAxes, fontsize=14,
+        #        verticalalignment='top', horizontalalignment='left',
+        #        bbox=dict(boxstyle='round', facecolor='white', alpha=0.8, edgecolor='gray'))
         
         # Make axes equal for better comparison
         ax.set_aspect('equal', adjustable='box')
         
         plt.tight_layout()
+
+        #plt.title(pred_column)
         
+        # Save the figure
+        safe_model_name = model_name.replace('/', '_').replace(' ', '_')
+        
+        save_path = os.path.join(save_dir, f'{safe_model_name}.png')
+        plt.savefig(save_path, dpi=150, bbox_inches='tight')
+        
+        plt.close()
+
+    reset_theme()
+
+
+def plot_gt_vs_pred_simulation(
+    all_results: dict[str, dict[str, np.ndarray]],
+    save_dir: str,
+    pollutant: str,
+    gt_column: str = 'real_ground_truths',
+    pred_column: str = 'real_predictions',
+) -> None:
+    from scipy import stats
+    
+    # Set seaborn style
+    sns.set_style("whitegrid")
+    sns.set_context("notebook")
+    
+    pollutants_idx = {
+        "o3": 0,
+        "pm10": 1,
+        "pm25": 2,
+        "no2": 3
+    }
+
+    title_dict = {
+        "o3": "O3",
+        "pm10": "PM10",
+        "pm25": "PM2.5",
+        "no2": "NO2"
+    }
+    pollutant_idx = pollutants_idx[pollutant]
+    
+    # Create output directory if it doesn't exist
+    os.makedirs(save_dir, exist_ok=True)
+    gt_valid_krig = None
+    pred_valid_krig = None
+    
+    for model_name, results in all_results.items():
+
+        gt_img = results[gt_column][:, pollutant_idx]
+        pred_img = results[pred_column][:, pollutant_idx]
+        pred_mask = results["real_target_masks"][:, [pollutant_idx]]
+        
+        # Get the shape to reconstruct spatial coordinates
+        time_steps, height, width = gt_img.shape
+        
+        # Create coordinate arrays
+        # Shape will be (time, height, width)
+        y_coords, x_coords = np.meshgrid(np.arange(height), np.arange(width), indexing='ij')
+        
+        # Broadcast to match time dimension
+        x_coords_full = np.broadcast_to(x_coords[np.newaxis, :, :], (time_steps, height, width))
+        y_coords_full = np.broadcast_to(y_coords[np.newaxis, :, :], (time_steps, height, width))
+        
+        # Flatten the arrays
+        pred_mask_flat = pred_mask.flatten()
+        gt_flat = gt_img.flatten()
+        pred_flat = pred_img.flatten()
+        x_flat = x_coords_full.flatten()
+        y_flat = y_coords_full.flatten()
+
+        if pred_mask_flat.shape[0] > gt_flat.shape[0]:
+            pred_mask_flat = pred_mask_flat[:gt_flat.shape[0]]
+
+        gt_flat = gt_flat[:pred_mask_flat.shape[0]]
+        pred_flat = pred_flat[:pred_mask_flat.shape[0]]
+        x_flat = x_flat[:pred_mask_flat.shape[0]]
+        y_flat = y_flat[:pred_mask_flat.shape[0]]
+        
+        # Filter out pixels where ground truth is close to 0 (missing data)
+        mask = gt_flat > 1e-6
+        #mask_plot = pred_mask_flat > 1e-6
+        gt_valid = gt_flat[mask]
+        pred_valid = pred_flat[mask]
+        
+        
+        # Create figure
+        _, ax = plt.subplots(figsize=(5, 5))
+
+        # Select random points to plot
+        k_size = int(0.0001*len(gt_valid))
+        sort_idx = np.argsort(gt_valid)
+        groups = np.array_split(sort_idx, k_size)
+
+        random_idx = np.array([np.random.choice(g) for g in groups], dtype=int)
+        random_idx = np.sort(random_idx)
+        
+        ax.scatter(gt_flat[random_idx], pred_flat[random_idx], 
+                alpha=0.5, s=18, color='coral', edgecolor='none')
+        
+        if model_name == "Kriging":
+            gt_valid_krig = gt_valid
+            pred_valid_krig = pred_valid
+        
+        # Add confidence ellipse
+        draw_ellipse(gt_valid, pred_valid, ax, model_name)
+        if model_name != 'Kriging':
+            draw_ellipse(gt_valid_krig, pred_valid_krig, ax, "Kriging")
+        
+        # Labels and title
+        ax.set_xlabel('Reference '+ title_dict[pollutant], fontsize=20)
+        ax.set_ylabel('Predicted', fontsize=20)
+        if pollutant == "no2":
+            ax.set_xlim(-20, 60)
+            ax.set_ylim(-20, 60)
+        if pollutant == "pm10":
+            ax.set_xlim(-5, 35)
+            ax.set_ylim(-5, 35)
+        if pollutant == "pm25":
+            ax.set_xlim(-5, 30)
+            ax.set_ylim(-5, 30)
+        
+        # Make axes equal for better comparison
+        ax.set_aspect('equal', adjustable='box')
+        
+        plt.tight_layout()
+
         # Save the figure
         safe_model_name = model_name.replace('/', '_').replace(' ', '_')
         

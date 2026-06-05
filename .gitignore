@@ -9,3 +9,5 @@ paper_results/*
 report_images/*
 presentation_images/*
 paper_images/*
+tmp/*
+paper_results.zip
