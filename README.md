@@ -13,7 +13,7 @@ This repository contains scripts to train and evaluate deterministic and generat
 
 ...........
 
-https://github.com/Miha5092/master-thesis/blob/5a86e0394894c9106263c6bb8656800e48217cdd/assets/training.pdf
+<img src="https://github.com/Miha5092/master-thesis/blob/03ddf9757b5387b79e9372f3b71ba5a951a5bf6c/assets/training.png" width="800">
 
 Figure shows training method of various models using simulation data. Panel (a) illustrates the feature extraction step, Panel (b) illustrates the output generation by deterministic and generative models.
 
