@@ -69,4 +69,4 @@ Figure shows training method of various models using simulation data. Panel (a) 
     <td><img src="https://github.com/Miha5092/master-thesis/raw/5a86e0394894c9106263c6bb8656800e48217cdd/assets/3_backsample.gif" width="220"/></td>
   </tr>
 </table>
-Plots GIFs for NO2, O3, PM10, PM2.5 pollutants showing the sampling procedure in diffusion process with the corresponding PSD plot for all intermediate steps
+Plots GIFs for NO2, O3, PM10, PM2.5 pollutants showing the sampling procedure in diffusion process with the corresponding PSD plot for all intermediate steps. The reference here is computed from the corresponding simulation data and thus does not represent the ground truth. 
